@@ -1,0 +1,573 @@
+<title>Guía Control de Acceso</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+/* Layout: guía técnica de una columna; diagramas tipo esquema; colores de cable por componente */
+:root{
+  --bg:#f4f6f5; --surface:#ffffff; --ink:#15201b; --muted:#56655e; --line:#dbe2de;
+  --accent:#0c6b52; --accent-soft:#dff0e8;
+  --warn:#9a4a06; --warn-soft:#fcefdc; --danger:#b3261e; --danger-soft:#fbe4e1;
+  --pcb:#18372f; --pcb-2:#21473d; --pcb-ink:#d6e9e1; --pad:#c9a54a;
+  --c-cam:#7048c4; --c-ue:#1d68c9; --c-us:#0b8396; --c-servo:#c96a07; --c-oled:#bd3577;
+  --c-btn:#c22f28; --c-buz:#8f6c00; --c-pwr:#5f6b66; --c-no:#a5aeaa;
+  --f-display:"Archivo","Segoe UI",system-ui,sans-serif;
+  --f-body:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0e1412; --surface:#151d1a; --ink:#e3ebe7; --muted:#97a69f; --line:#27332e;
+  --accent:#4fc7a0; --accent-soft:#143128;
+  --warn:#f2a659; --warn-soft:#33230f; --danger:#f37c70; --danger-soft:#3b1714;
+  --pcb:#1b4238; --pcb-2:#245245; --pcb-ink:#e2f0ea; --pad:#d9b75c;
+  --c-cam:#a888f2; --c-ue:#6da8f6; --c-us:#45c4d7; --c-servo:#f3a24f; --c-oled:#f07db2;
+  --c-btn:#f2716a; --c-buz:#e3be3d; --c-pwr:#9aa7a1; --c-no:#56625d;
+  color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --bg:#0e1412; --surface:#151d1a; --ink:#e3ebe7; --muted:#97a69f; --line:#27332e;
+  --accent:#4fc7a0; --accent-soft:#143128;
+  --warn:#f2a659; --warn-soft:#33230f; --danger:#f37c70; --danger-soft:#3b1714;
+  --pcb:#1b4238; --pcb-2:#245245; --pcb-ink:#e2f0ea; --pad:#d9b75c;
+  --c-cam:#a888f2; --c-ue:#6da8f6; --c-us:#45c4d7; --c-servo:#f3a24f; --c-oled:#f07db2;
+  --c-btn:#f2716a; --c-buz:#e3be3d; --c-pwr:#9aa7a1; --c-no:#56625d;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:16px;line-height:1.55;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 64px}
+.wrap{max-width:980px;margin:0 auto;display:grid;gap:56px}
+h1,h2,h3{font-family:var(--f-display);text-wrap:balance;margin:0;line-height:1.15}
+h1{font-size:clamp(30px,5vw,46px);font-weight:800;letter-spacing:-.01em}
+h2{font-size:26px;font-weight:800}
+h3{font-size:17px;font-weight:600}
+p{margin:0;max-width:68ch}
+code,.mono{font-family:var(--f-mono);font-size:.92em}
+.eyebrow{font-family:var(--f-mono);font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);font-weight:600}
+.sec{display:grid;gap:20px}
+.sec-head{display:grid;gap:8px}
+.sec-head p{color:var(--muted)}
+.box{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:20px}
+.scroll{overflow-x:auto}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:16px}
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:16px}
+.grid2>*,.grid3>*{min-width:0}
+
+/* Hero */
+header.hero{padding-block:48px 8px;display:grid;gap:18px}
+header.hero p{font-size:18px;color:var(--muted)}
+.versions{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:16px;margin-top:8px}
+.ver{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px;display:grid;gap:10px}
+.ver .tag{font-family:var(--f-mono);font-weight:600;font-size:13px;color:var(--accent)}
+.ver ul{margin:0;padding-left:18px;color:var(--muted)}
+.ver .folder{font-family:var(--f-mono);font-size:13px;background:var(--accent-soft);color:var(--ink);padding:4px 8px;border-radius:6px;justify-self:start}
+
+/* Callouts */
+.call{display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:start;border-radius:10px;padding:14px 16px;border:1px solid}
+.call .ic{font-family:var(--f-mono);font-weight:600;font-size:13px;border-radius:6px;padding:2px 8px;white-space:nowrap}
+.call.warn{background:var(--warn-soft);border-color:color-mix(in srgb,var(--warn) 35%,transparent)}
+.call.warn .ic{background:var(--warn);color:var(--surface)}
+.call.danger{background:var(--danger-soft);border-color:color-mix(in srgb,var(--danger) 35%,transparent)}
+.call.danger .ic{background:var(--danger);color:var(--surface)}
+.call.info{background:var(--accent-soft);border-color:color-mix(in srgb,var(--accent) 30%,transparent)}
+.call.info .ic{background:var(--accent);color:var(--surface)}
+.calls{display:grid;gap:12px}
+
+/* Flow */
+.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr));gap:10px;counter-reset:s}
+.step{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px;display:grid;gap:6px;align-content:start;position:relative}
+.step::before{counter-increment:s;content:counter(s);font-family:var(--f-mono);font-weight:600;font-size:12px;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;background:var(--accent);color:var(--surface)}
+.step b{font-size:15px}
+.step span{font-size:13.5px;color:var(--muted)}
+.flow.exit .step::before{background:var(--c-us)}
+.states{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-family:var(--f-mono);font-size:13px}
+.states .st{padding:6px 10px;border-radius:6px;border:1px solid var(--line);background:var(--surface);font-weight:600}
+.states .ar{color:var(--muted)}
+
+/* Tables */
+table{width:100%;border-collapse:collapse;font-size:14.5px}
+th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:var(--f-mono);font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+tr:last-child td{border-bottom:0}
+.badge{display:inline-block;font-family:var(--f-mono);font-size:12px;font-weight:600;padding:2px 8px;border-radius:999px;white-space:nowrap}
+.b-ok{background:var(--accent-soft);color:var(--accent)}
+.b-buy{background:var(--warn-soft);color:var(--warn)}
+.b-v1{background:color-mix(in srgb,var(--c-oled) 15%,var(--surface));color:var(--c-oled)}
+.qty{font-family:var(--f-mono);font-weight:600;font-variant-numeric:tabular-nums}
+
+/* Version toggle */
+.toggle{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--surface);justify-self:start}
+.toggle button{all:unset;cursor:pointer;padding:9px 16px;font-weight:600;font-size:14px;color:var(--muted)}
+.toggle button[aria-pressed="true"]{background:var(--accent);color:var(--surface)}
+.toggle button:focus-visible{outline:2px solid var(--accent);outline-offset:-3px}
+
+/* Pinout */
+.pinout svg{display:block;width:100%;min-width:620px;height:auto}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:13.5px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{width:12px;height:12px;border-radius:3px;display:inline-block}
+
+/* Component cards */
+.comp{background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden;display:grid;align-content:start}
+.comp header{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line)}
+.comp header i{width:12px;height:12px;border-radius:50%;flex:none}
+.comp header h3{font-size:15.5px}
+.comp table{font-size:14px}
+.comp td:first-child{color:var(--muted);width:42%}
+.gp{font-family:var(--f-mono);font-weight:600;padding:1px 7px;border-radius:5px;background:color-mix(in srgb,var(--k) 15%,var(--surface));color:var(--ink);border:1px solid color-mix(in srgb,var(--k) 45%,transparent);white-space:nowrap}
+.note{display:block;font-size:12.5px;color:var(--muted);margin-top:2px}
+
+/* Diagrams */
+.diag svg{display:block;width:100%;height:auto}
+.diag figcaption{font-size:14px;color:var(--muted);margin-top:10px}
+figure{margin:0}
+svg text{font-family:var(--f-body)}
+.t-ink{fill:var(--ink)}.t-mut{fill:var(--muted)}
+.s-ink{stroke:var(--ink)}.s-mut{stroke:var(--muted)}.s-line{stroke:var(--line)}
+
+/* Patterns */
+.pat{display:grid;grid-template-columns:minmax(120px,190px) 1fr;gap:6px 16px;align-items:center}
+.pat .lbl{font-size:14px}
+.pat .lbl small{display:block;color:var(--muted);font-size:12.5px}
+.track{position:relative;height:22px;border-radius:4px;background:color-mix(in srgb,var(--line) 60%,transparent)}
+.track b{position:absolute;top:0;bottom:0;background:var(--c-buz);border-radius:3px}
+.axis{display:flex;justify-content:space-between;font-family:var(--f-mono);font-size:11.5px;color:var(--muted);grid-column:2}
+.press{display:grid;gap:8px}
+.pbar{display:grid;grid-template-columns:3fr 1.4fr;height:44px;border-radius:8px;overflow:hidden;font-weight:600;font-size:14px}
+.pbar div{display:flex;align-items:center;padding:0 12px}
+.pbar .a{background:var(--danger-soft);color:var(--danger)}
+.pbar .b{background:var(--accent-soft);color:var(--accent);border-left:2px dashed var(--muted)}
+
+/* Steps & keys */
+ol.steps{margin:0;padding:0;list-style:none;display:grid;gap:10px;counter-reset:k}
+ol.steps li{display:grid;grid-template-columns:32px 1fr;gap:12px;align-items:start;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px}
+ol.steps li::before{counter-increment:k;content:counter(k);font-family:var(--f-mono);font-weight:600;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;border:2px solid var(--accent);color:var(--accent);font-size:13px}
+.wifi{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr));gap:12px}
+.wifi div{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px;display:grid;gap:4px}
+.wifi small{font-family:var(--f-mono);font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.wifi b{font-family:var(--f-mono);font-size:17px;word-break:break-all}
+.keys{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr));gap:10px}
+.keys div{display:flex;align-items:center;gap:10px;font-size:14.5px}
+kbd{font-family:var(--f-mono);font-weight:600;font-size:14px;min-width:38px;text-align:center;padding:4px 8px;border-radius:6px;background:var(--surface);border:1px solid var(--line);border-bottom-width:3px}
+.sit td:first-child{font-weight:600;width:34%}
+.dec{display:grid;gap:4px}
+.dec p{font-size:15px;color:var(--muted)}
+
+footer{color:var(--muted);font-size:13.5px;border-top:1px solid var(--line);padding-top:20px}
+@media (prefers-reduced-motion:no-preference){.toggle button{transition:background .15s,color .15s}}
+@media (max-width:520px){.pat{grid-template-columns:1fr}.axis{grid-column:1}}
+</style>
+
+<div class="wrap">
+
+<header class="hero">
+  <span class="eyebrow">Automatización Industrial · ESP32</span>
+  <h1>Control de acceso a la planta</h1>
+  <p>El sistema detecta a cada trabajador en la puerta, decide si es humano o robot, le toma una foto, le asigna un ID y cuenta cuánto tiempo pasa dentro. Las dos versiones del código hacen lo mismo. Solo cambia dónde se ven los datos.</p>
+  <div class="versions">
+    <div class="ver">
+      <span class="tag">VERSIÓN 1</span>
+      <h3>Con pantalla OLED</h3>
+      <ul><li>Pantalla OLED en la maqueta</li><li>Dashboard web en el celular o PC</li><li>Necesita 2 librerías (ya instaladas)</li></ul>
+      <span class="folder">v1_con_oled/v1_con_oled.ino</span>
+    </div>
+    <div class="ver">
+      <span class="tag">VERSIÓN 2</span>
+      <h3>Sin pantalla</h3>
+      <ul><li>El dashboard web es el panel local</li><li>Permite un 2.º botón de reset</li><li>No necesita librerías externas</li></ul>
+      <span class="folder">v2_sin_oled/v2_sin_oled.ino</span>
+    </div>
+  </div>
+</header>
+
+<section class="sec">
+  <div class="sec-head">
+    <span class="eyebrow">Antes de armar</span>
+    <h2>Lo más importante</h2>
+  </div>
+  <div class="calls">
+    <div class="call danger"><span class="ic">3.3 V</span><p>La cámara OV7670 se alimenta con <b>3.3 V</b>. Si la conectan a 5 V se daña.</p></div>
+    <div class="call danger"><span class="ic">ECHO</span><p>El pin ECHO de cada ultrasonido saca 5 V. Antes de llegar al ESP32 debe pasar por un <b>divisor de voltaje</b> (1 kΩ y 2 kΩ). El diagrama está más abajo.</p></div>
+    <div class="call warn"><span class="ic">FALTA</span><p>Para tener puerta de entrada y puerta de salida hacen falta <b>2 ultrasonidos y 2 servos</b>. Con uno solo, el sistema no sabe si la persona entra o sale.</p></div>
+    <div class="call warn"><span class="ic">GPIO12</span><p>Si la placa no deja cargar el programa, desconecten el servo de salida (GPIO 12) mientras suben el código y vuelvan a conectarlo después.</p></div>
+  </div>
+</section>
+
+<section class="sec">
+  <div class="sec-head">
+    <span class="eyebrow">Funcionamiento</span>
+    <h2>Qué pasa cuando alguien llega</h2>
+    <p>Todo es automático. Estos son los pasos en orden.</p>
+  </div>
+  <h3>En la puerta de entrada</h3>
+  <div class="flow">
+    <div class="step"><b>Detecta</b><span>El ultrasonido ve algo 3 veces seguidas (unos 0.25 s)</span></div>
+    <div class="step"><b>Mide la altura</b><span>Alto = humano. Bajo = robot</span></div>
+    <div class="step"><b>Toma la foto</b><span>La cámara captura 160×120 y la guarda</span></div>
+    <div class="step"><b>Asigna ID</b><span>El primero libre entre T01 y T12</span></div>
+    <div class="step"><b>Inicia el contador</b><span>Empieza a contar su tiempo dentro</span></div>
+    <div class="step"><b>Abre la puerta</b><span>Cierra 1.5 s después de que pasa (mínimo 3 s abierta)</span></div>
+  </div>
+  <h3>En la puerta de salida</h3>
+  <div class="flow exit">
+    <div class="step"><b>Detecta</b><span>Igual que en la entrada</span></div>
+    <div class="step"><b>Mide la altura</b><span>Humano o robot</span></div>
+    <div class="step"><b>Busca quién es</b><span>El de ese tipo que lleva más tiempo dentro</span></div>
+    <div class="step"><b>Detiene el contador</b><span>Guarda la permanencia en el historial</span></div>
+    <div class="step"><b>Abre la puerta</b><span>La salida siempre abre, por seguridad</span></div>
+  </div>
+  <div class="box" style="display:grid;gap:10px">
+    <h3>Estados de cada puerta en el código</h3>
+    <div class="states">
+      <span class="st">CERRADA</span><span class="ar">→ llega alguien →</span>
+      <span class="st">ABIERTA</span><span class="ar">→ la zona queda libre →</span>
+      <span class="st">REARME</span><span class="ar">→ espera zona vacía →</span>
+      <span class="st">CERRADA</span>
+    </div>
+    <p style="color:var(--muted);font-size:14.5px">REARME evita contar dos veces a la misma persona si se queda parada frente al sensor.</p>
+  </div>
+</section>
+
+<section class="sec">
+  <div class="sec-head">
+    <span class="eyebrow">Lista de compras</span>
+    <h2>Materiales</h2>
+  </div>
+  <div class="box scroll">
+    <table>
+      <thead><tr><th>Componente</th><th>Cant.</th><th>Estado</th><th>Para qué</th></tr></thead>
+      <tbody>
+        <tr><td>ESP32 DevKit V1 (WROOM-32)</td><td class="qty">1</td><td><span class="badge b-ok">En su lista</span></td><td>El cerebro. No sirve la versión WROVER</td></tr>
+        <tr><td>Cámara OV7670 <b>sin FIFO</b></td><td class="qty">1</td><td><span class="badge b-ok">En su lista</span></td><td>Foto de cada trabajador. Es la de 18 pines sin chip extra</td></tr>
+        <tr><td>Ultrasonido HC-SR04</td><td class="qty">2</td><td><span class="badge b-buy">Falta 1</span></td><td>Uno por puerta. Detecta y mide la altura</td></tr>
+        <tr><td>Servomotor SG90 o MG90S</td><td class="qty">2</td><td><span class="badge b-buy">Falta 1</span></td><td>Uno por puerta. Abre y cierra</td></tr>
+        <tr><td>Pulsador</td><td class="qty">1</td><td><span class="badge b-ok">En su lista</span></td><td>Emergencia y reset</td></tr>
+        <tr><td>Pantalla OLED 0.96" I2C (SSD1306)</td><td class="qty">1</td><td><span class="badge b-v1">Solo V1</span></td><td>Panel local en la maqueta</td></tr>
+        <tr><td>Buzzer <b>activo</b></td><td class="qty">1</td><td><span class="badge b-buy">Comprar</span></td><td>Pitido cuando entra o sale un robot</td></tr>
+        <tr><td>Resistencias 1 kΩ y 2 kΩ</td><td class="qty">2+2</td><td><span class="badge b-buy">Comprar</span></td><td>Divisores de voltaje de los ECHO</td></tr>
+        <tr><td>Resistencias 4.7 kΩ</td><td class="qty">2</td><td><span class="badge b-buy">Comprar</span></td><td>Pull-ups de SIOC y SIOD de la cámara</td></tr>
+        <tr><td>Fuente 5 V / 2 A</td><td class="qty">1</td><td><span class="badge b-buy">Comprar</span></td><td>Alimenta los servos. Su GND va unido al del ESP32</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="sec" id="conexiones">
+  <div class="sec-head">
+    <span class="eyebrow">Cableado</span>
+    <h2>Conexiones al ESP32</h2>
+    <p>Elijan la versión. Los pines que cambian entre V1 y V2 son el 21 y el 22.</p>
+  </div>
+  <div class="toggle" role="group" aria-label="Versión">
+    <button type="button" id="btn-v1" aria-pressed="true">Versión 1 · con OLED</button>
+    <button type="button" id="btn-v2" aria-pressed="false">Versión 2 · sin OLED</button>
+  </div>
+  <div class="box pinout">
+    <div class="legend" id="legend"></div>
+    <div class="scroll" style="margin-top:14px"><svg id="pinsvg" viewBox="0 0 660 540" role="img" aria-label="Mapa de pines del ESP32"></svg></div>
+    <p style="color:var(--muted);font-size:14px;margin-top:10px" id="pinnote"></p>
+  </div>
+  <div class="grid3" id="comps"></div>
+</section>
+
+<section class="sec">
+  <div class="sec-head">
+    <span class="eyebrow">Detalles de montaje</span>
+    <h2>Sensores y divisor de voltaje</h2>
+  </div>
+  <div class="grid2">
+    <figure class="box diag">
+      <h3 style="margin-bottom:12px">Cómo distingue humano de robot</h3>
+      <svg viewBox="0 0 400 300" role="img" aria-label="Sensor arriba mirando al piso; humano alto y robot bajo">
+        <defs><marker id="ah" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" style="fill:var(--muted)"/></marker></defs>
+        <!-- soporte y sensor (20 cm => y=50, piso y=250, 1 cm = 10 px) -->
+        <rect x="20" y="30" width="360" height="8" rx="2" style="fill:var(--line)"/>
+        <rect x="60" y="38" width="56" height="16" rx="3" style="fill:var(--c-ue)"/>
+        <circle cx="76" cy="54" r="6" style="fill:var(--surface);stroke:var(--c-ue);stroke-width:2"/>
+        <circle cx="100" cy="54" r="6" style="fill:var(--surface);stroke:var(--c-ue);stroke-width:2"/>
+        <text x="124" y="51" font-size="12" class="t-ink" font-weight="600">HC-SR04 a ~20 cm del piso</text>
+        <rect x="240" y="38" width="56" height="16" rx="3" style="fill:var(--c-ue)"/>
+        <circle cx="256" cy="54" r="6" style="fill:var(--surface);stroke:var(--c-ue);stroke-width:2"/>
+        <circle cx="280" cy="54" r="6" style="fill:var(--surface);stroke:var(--c-ue);stroke-width:2"/>
+        <!-- umbral 8 cm => y=170 ; mínimo 2 cm => y=230 -->
+        <line x1="20" y1="170" x2="380" y2="170" stroke-dasharray="6 5" style="stroke:var(--danger);stroke-width:1.5"/>
+        <text x="378" y="164" font-size="11.5" text-anchor="end" style="fill:var(--danger)" font-weight="600">umbral 8 cm</text>
+        <line x1="20" y1="230" x2="380" y2="230" stroke-dasharray="2 4" style="stroke:var(--muted);stroke-width:1"/>
+        <text x="378" y="225" font-size="11" text-anchor="end" class="t-mut">presencia 2 cm</text>
+        <!-- humano 11 cm => top y=140 -->
+        <circle cx="88" cy="150" r="10" style="fill:var(--c-cam)"/>
+        <rect x="74" y="162" width="28" height="88" rx="6" style="fill:var(--c-cam)"/>
+        <line x1="40" y1="62" x2="40" y2="138" class="s-mut" stroke-width="1.5" marker-start="url(#ah)" marker-end="url(#ah)"/>
+        <text x="46" y="104" font-size="11" class="t-mut">mide 9 cm</text>
+        <text x="88" y="270" font-size="13" text-anchor="middle" class="t-ink" font-weight="600">HUMANO · 11 cm</text>
+        <!-- robot 5 cm => top y=200 -->
+        <rect x="248" y="200" width="40" height="40" rx="4" style="fill:var(--c-servo)"/>
+        <rect x="256" y="210" width="8" height="8" rx="2" style="fill:var(--surface)"/>
+        <rect x="272" y="210" width="8" height="8" rx="2" style="fill:var(--surface)"/>
+        <circle cx="256" cy="244" r="6" style="fill:var(--ink)"/><circle cx="280" cy="244" r="6" style="fill:var(--ink)"/>
+        <line x1="320" y1="62" x2="320" y2="198" class="s-mut" stroke-width="1.5" marker-start="url(#ah)" marker-end="url(#ah)"/>
+        <text x="326" y="134" font-size="11" class="t-mut">mide 15 cm</text>
+        <text x="268" y="270" font-size="13" text-anchor="middle" class="t-ink" font-weight="600">ROBOT · 5 cm</text>
+        <line x1="20" y1="250" x2="380" y2="250" class="s-ink" stroke-width="2"/>
+        <text x="20" y="290" font-size="11.5" class="t-mut">altura = distancia al piso − distancia medida</text>
+      </svg>
+      <figcaption>El sensor va arriba, antes de la puerta, mirando al piso. Al encender, mide la distancia al piso, así que la zona debe estar vacía. Los valores se ajustan al inicio del código: <code>UMBRAL_HUMANO_CM</code> y <code>ALTURA_MIN_PRESENCIA_CM</code>.</figcaption>
+    </figure>
+    <figure class="box diag">
+      <h3 style="margin-bottom:12px">Divisor de voltaje del ECHO</h3>
+      <svg viewBox="0 0 400 300" role="img" aria-label="ECHO pasa por 1 kilo-ohm hacia el GPIO, y del GPIO sale 2 kilo-ohm a tierra">
+        <rect x="20" y="40" width="96" height="56" rx="6" style="fill:var(--c-ue)"/>
+        <text x="68" y="64" font-size="13" text-anchor="middle" style="fill:var(--surface)" font-weight="600">HC-SR04</text>
+        <text x="68" y="82" font-size="12" text-anchor="middle" style="fill:var(--surface)">ECHO · 5 V</text>
+        <path d="M116 68 H150" class="s-ink" stroke-width="2" fill="none"/>
+        <path d="M150 68 l6 -9 l10 18 l10 -18 l10 18 l10 -18 l10 18 l6 -9" style="stroke:var(--c-servo)" stroke-width="2.5" fill="none" stroke-linejoin="round"/>
+        <text x="181" y="50" font-size="13" text-anchor="middle" class="t-ink" font-weight="600">1 kΩ</text>
+        <path d="M212 68 H330" class="s-ink" stroke-width="2" fill="none"/>
+        <circle cx="260" cy="68" r="5" style="fill:var(--ink)"/>
+        <rect x="300" y="48" width="84" height="40" rx="6" style="fill:var(--pcb)"/>
+        <text x="342" y="66" font-size="12" text-anchor="middle" style="fill:var(--pcb-ink)" font-weight="600">ESP32</text>
+        <text x="342" y="81" font-size="11" text-anchor="middle" style="fill:var(--pcb-ink)">GPIO 36 / 39</text>
+        <path d="M260 68 V120" class="s-ink" stroke-width="2" fill="none"/>
+        <path d="M260 120 l-9 6 l18 10 l-18 10 l18 10 l-18 10 l18 10 l-9 6" style="stroke:var(--c-servo)" stroke-width="2.5" fill="none" stroke-linejoin="round"/>
+        <text x="282" y="157" font-size="13" class="t-ink" font-weight="600">2 kΩ</text>
+        <path d="M260 182 V220" class="s-ink" stroke-width="2" fill="none"/>
+        <path d="M240 220 H280 M246 228 H274 M252 236 H268" class="s-ink" stroke-width="2"/>
+        <text x="260" y="256" font-size="12" text-anchor="middle" class="t-mut">GND</text>
+        <text x="20" y="150" font-size="12.5" class="t-ink">5 V × 2k / (1k + 2k)</text>
+        <text x="20" y="170" font-size="12.5" class="t-ink" font-weight="600">= 3.3 V al ESP32</text>
+      </svg>
+      <figcaption>Se arma uno por cada ultrasonido. El TRIG sí va directo, porque el ESP32 lo maneja con 3.3 V.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="sec">
+  <div class="sec-head">
+    <span class="eyebrow">Paso a paso</span>
+    <h2>Cargar el programa</h2>
+  </div>
+  <ol class="steps">
+    <li><div>En Arduino IDE, abran el <b>Gestor de placas</b> e instalen <b>esp32 by Espressif Systems</b> versión 3.x. En este PC ya está la 3.3.8.</div></li>
+    <li><div>Solo para la V1: en el <b>Gestor de librerías</b> instalen <b>Adafruit SSD1306</b> y <b>Adafruit GFX Library</b>. En este PC ya están instaladas.</div></li>
+    <li><div>En <b>Herramientas → Placa</b> elijan <b>ESP32 Dev Module</b>. En Partition Scheme dejen <b>Default 4MB with spiffs</b>, que es donde se guardan las fotos.</div></li>
+    <li><div>Abran el <code>.ino</code> de la versión que van a usar y pulsen <b>Subir</b>.</div></li>
+    <li><div>Abran el <b>Monitor Serie a 115200 baudios</b>. Ahí aparecen la IP, la calibración y cada entrada y salida.</div></li>
+  </ol>
+</section>
+
+<section class="sec">
+  <div class="sec-head">
+    <span class="eyebrow">Dashboard</span>
+    <h2>Ver el sistema desde el celular o el PC</h2>
+    <p>El ESP32 crea su propia red WiFi. No hace falta Internet.</p>
+  </div>
+  <div class="wifi">
+    <div><small>1 · Red WiFi</small><b>Fabrica-ESP32</b></div>
+    <div><small>2 · Contraseña</small><b>fabrica123</b></div>
+    <div><small>3 · Abrir en el navegador</small><b>192.168.4.1</b></div>
+  </div>
+  <div class="grid2">
+    <div class="box" style="display:grid;gap:8px">
+      <h3>Qué muestra</h3>
+      <table><tbody>
+        <tr><td>Arriba</td><td>Humanos y robots dentro, total sobre 12, estado del sistema</td></tr>
+        <tr><td>Puertas</td><td>Abierta o cerrada, con botón <b>Abrir</b> para apertura remota</td></tr>
+        <tr><td>Trabajadores</td><td>Foto, ID, tipo y tiempo dentro. Se pone en rojo después de 90 s</td></tr>
+        <tr><td>Historial</td><td>Foto, ID, tipo, hora de entrada y salida, permanencia</td></tr>
+        <tr><td>Botones</td><td>Emergencia, Reset y Probar cámara</td></tr>
+      </tbody></table>
+    </div>
+    <div class="box" style="display:grid;gap:10px;align-content:start">
+      <h3>Usar también su propio WiFi (opcional)</h3>
+      <p style="font-size:15px;color:var(--muted)">Al inicio del código, escriban su red en <code>STA_SSID</code> y su clave en <code>STA_PASS</code>. El ESP32 mantiene su propia red y además se conecta a la de ustedes. La IP nueva aparece en el Monitor Serie.</p>
+      <p style="font-size:15px;color:var(--muted)">También pueden abrir <code>http://fabrica.local</code> en vez de la IP.</p>
+    </div>
+  </div>
+</section>
+
+<section class="sec">
+  <div class="sec-head">
+    <span class="eyebrow">Reacciones</span>
+    <h2>Qué hace el sistema en cada situación</h2>
+  </div>
+  <div class="box scroll">
+    <table class="sit"><tbody>
+      <tr><td>Llega alguien a la entrada</td><td>Clasifica, toma la foto, asigna el ID, inicia el contador y abre</td></tr>
+      <tr><td>Llega alguien a la salida</td><td>Clasifica, detiene su contador, lo quita del conteo y abre</td></tr>
+      <tr><td>Entra o sale un robot</td><td>3 pitidos cortos</td></tr>
+      <tr><td>Ya hay 12 dentro</td><td>No abre la entrada, da un pitido largo y avisa "Planta llena"</td></tr>
+      <tr><td>Alguien pasa de 90 s</td><td>Alerta en la pantalla y el dashboard, más 2 pitidos</td></tr>
+      <tr><td>Botón pulsado corto</td><td><b style="color:var(--danger)">EMERGENCIA</b>: abre las dos puertas, suena la alarma y las puertas quedan abiertas</td></tr>
+      <tr><td>Botón mantenido 3 s</td><td><b style="color:var(--accent)">RESET</b>: cierra las puertas y pone en cero los trabajadores y los contadores</td></tr>
+    </tbody></table>
+  </div>
+  <div class="grid2">
+    <div class="box press">
+      <h3>Un solo botón, dos funciones</h3>
+      <div class="pbar"><div class="a">Soltar antes de 3 s → Emergencia</div><div class="b">3 s → Reset</div></div>
+      <div class="axis" style="grid-column:auto"><span>0 s</span><span>3 s</span><span></span></div>
+      <p style="font-size:14px;color:var(--muted)">La emergencia solo se quita con un reset (botón, dashboard o comando <code>rs</code>).</p>
+    </div>
+    <div class="box" style="display:grid;gap:12px">
+      <h3>Sonidos del buzzer</h3>
+      <div class="pat" id="pats"></div>
+    </div>
+  </div>
+</section>
+
+<section class="sec">
+  <div class="sec-head">
+    <span class="eyebrow">Pruebas</span>
+    <h2>Comandos del Monitor Serie</h2>
+    <p>Sirven para probar el sistema sin sensores. Escriban el comando y pulsen Enter.</p>
+  </div>
+  <div class="box keys">
+    <div><kbd>eh</kbd> Entra un humano</div>
+    <div><kbd>er</kbd> Entra un robot</div>
+    <div><kbd>sh</kbd> Sale un humano</div>
+    <div><kbd>sr</kbd> Sale un robot</div>
+    <div><kbd>em</kbd> Emergencia</div>
+    <div><kbd>rs</kbd> Reset</div>
+    <div><kbd>st</kbd> Estado actual</div>
+    <div><kbd>d</kbd> Altura que mide cada sensor</div>
+  </div>
+  <div class="call info"><span class="ic">TIP</span><p>Usen <kbd>d</kbd> para calibrar. Pongan un humano y luego un robot bajo el sensor y miren qué altura mide cada uno. Después ajusten <code>UMBRAL_HUMANO_CM</code> a un valor entre las dos.</p></div>
+</section>
+
+<section class="sec">
+  <div class="sec-head">
+    <span class="eyebrow">Para la sustentación</span>
+    <h2>Decisiones de diseño</h2>
+  </div>
+  <div class="grid2">
+    <div class="box dec"><h3>Identidad</h3><p>El ID (T01 a T12) se asigna al entrar y queda unido a la foto y al contador. El enunciado lo permite: "identificador definido por Ud.".</p></div>
+    <div class="box dec"><h3>¿Quién sale?</h3><p>Sin lector de tarjetas no se puede saber quién sale. El sistema asume que sale el del mismo tipo que lleva más tiempo dentro. Mejora posible: un lector RFID RC522.</p></div>
+    <div class="box dec"><h3>Seguridad</h3><p>La puerta de salida siempre abre, aunque no haya registro de esa persona. Nunca deja a nadie encerrado.</p></div>
+    <div class="box dec"><h3>Cámara</h3><p>La OV7670 no genera JPEG. El ESP32 captura 160×120, lo convierte a JPEG y lo guarda en su memoria (las últimas 40 fotos). Si la cámara falla, todo lo demás sigue funcionando.</p></div>
+    <div class="box dec"><h3>Sin bloqueos</h3><p>Puertas, botones, buzzer, pantalla y página web corren juntos en el <code>loop()</code>, con máquinas de estados. Ninguna tarea detiene a las demás.</p></div>
+    <div class="box dec"><h3>Servos y cámara</h3><p>Los servos usan los canales PWM 4 y 5. La cámara usa el canal 0 para su reloj. Por eso no chocan entre sí.</p></div>
+  </div>
+</section>
+
+<footer>Archivos del proyecto: <code>Proyecto Fabrica/v1_con_oled</code>, <code>Proyecto Fabrica/v2_sin_oled</code> y esta guía (<code>Guia.html</code>). Código verificado: compila con esp32 3.3.8 en ESP32 Dev Module.</footer>
+</div>
+
+<script>
+(function(){
+  const COL={cam:'--c-cam',ue:'--c-ue',us:'--c-us',servo:'--c-servo',oled:'--c-oled',btn:'--c-btn',buz:'--c-buz',pwr:'--c-pwr',no:'--c-no'};
+  const NAMES={cam:'Cámara OV7670',ue:'Ultrasonido entrada',us:'Ultrasonido salida',servo:'Servos',oled:'OLED',btn:'Pulsador',buz:'Buzzer',pwr:'Alimentación',no:'No usar / libre'};
+
+  // Pines del ESP32 DevKit V1 de 30 pines (antena arriba, USB abajo)
+  const LEFT=['EN','36','39','34','35','32','33','25','26','27','14','12','13','GND','VIN'];
+  const RIGHT=['23','22','1','3','21','19','18','5','17','16','4','2','15','GND','3V3'];
+  const ALIAS={'36':'VP 36','39':'VN 39','1':'TX 1','3':'RX 3'};
+
+  function fn(pin,v,side){
+    const m={
+      'EN':['no','Botón EN de la placa'],
+      '36':['ue','ECHO entrada (con divisor)'],
+      '39':['us','ECHO salida (con divisor)'],
+      '34':['cam','Cámara VSYNC'],'35':['cam','Cámara HREF'],
+      '32':['cam','Cámara XCLK'],'33':['cam','Cámara PCLK'],
+      '25':['servo','Servo entrada (señal)'],
+      '26':['cam','Cámara SIOD'],'27':['cam','Cámara SIOC'],
+      '14':['cam','Cámara D5'],'12':['servo','Servo salida (señal)'],'13':['cam','Cámara D4'],
+      'VIN':['pwr','5 V → VCC ultrasonidos'],
+      '23':v===1?['ue','TRIG de los 2 ultrasonidos']:['ue','TRIG entrada'],
+      '22':v===1?['oled','OLED SCL']:['us','TRIG salida'],
+      '1':['no','USB (no usar)'],'3':['no','USB (no usar)'],
+      '21':v===1?['oled','OLED SDA']:['btn','Botón reset (opcional)'],
+      '19':['cam','Cámara D3'],'18':['cam','Cámara D2'],'5':['cam','Cámara D1'],
+      '17':['cam','Cámara D7'],'16':['cam','Cámara D6'],'4':['cam','Cámara D0'],
+      '2':['buz','Buzzer (+)'],'15':['btn','Pulsador'],
+      '3V3':['pwr',v===1?'3.3 V → cámara y OLED':'3.3 V → cámara'],
+    };
+    if(pin==='GND') return ['pwr','GND común (todo)'];
+    return m[pin];
+  }
+
+  const COMPS=v=>[
+    {k:'cam',t:'Cámara OV7670 (sin FIFO)',r:[['3V3','3V3','¡Nunca 5 V!'],['GND','GND'],['SIOC','27','+4.7 kΩ a 3V3'],['SIOD','26','+4.7 kΩ a 3V3'],['VSYNC','34'],['HREF','35'],['PCLK','33'],['XCLK','32'],['D0 · D1','4 · 5'],['D2 · D3','18 · 19'],['D4 · D5','13 · 14'],['D6 · D7','16 · 17'],['RESET','3V3'],['PWDN','GND']]},
+    {k:'ue',t:'Ultrasonido ENTRADA',r:[['VCC','VIN (5 V)'],['GND','GND'],['TRIG','23'],['ECHO','36','Con divisor 1k/2k']]},
+    {k:'us',t:'Ultrasonido SALIDA',r:[['VCC','VIN (5 V)'],['GND','GND'],['TRIG',v===1?'23':'22',v===1?'Compartido con la entrada':''],['ECHO','39','Con divisor 1k/2k']]},
+    {k:'servo',t:'Servomotores',r:[['Señal entrada (naranja)','25'],['Señal salida (naranja)','12'],['Rojo (+)','5 V fuente','Fuente externa'],['Marrón (−)','GND','Unido al GND del ESP32']]},
+    ...(v===1?[{k:'oled',t:'Pantalla OLED',r:[['VCC','3V3'],['GND','GND'],['SDA','21'],['SCL','22']]}]:[]),
+    {k:'btn',t:v===1?'Pulsador':'Pulsadores',r:[['Pata 1','15'],['Pata 2','GND'],...(v===2?[['Reset opcional','21','La otra pata a GND']]:[])]},
+    {k:'buz',t:'Buzzer activo',r:[['+ (pata larga)','2','El LED azul también parpadea'],['−','GND']]},
+  ];
+
+  const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const $=id=>document.getElementById(id);
+
+  function svg(v){
+    const top=70,rh=28,bx=230,bw=200,used={};
+    let h='';
+    const n=LEFT.length, bEnd=top+(n-1)*rh+8+30;
+    // placa
+    h+=`<rect x="${bx}" y="${top-34}" width="${bw}" height="${bEnd-(top-34)}" rx="10" style="fill:var(--pcb)"/>`;
+    h+=`<rect x="${bx+60}" y="${top-28}" width="${bw-120}" height="26" rx="3" style="fill:var(--pcb-2)"/>`;
+    h+=`<text x="${bx+bw/2}" y="${top-11}" font-size="10" text-anchor="middle" style="fill:var(--pcb-ink)">antena</text>`;
+    h+=`<rect x="${bx+66}" y="${top+120}" width="${bw-132}" height="110" rx="4" style="fill:var(--pcb-2)"/>`;
+    h+=`<text x="${bx+bw/2}" y="${top+165}" font-size="13" text-anchor="middle" font-weight="600" style="fill:var(--pcb-ink)">ESP32</text>`;
+    h+=`<text x="${bx+bw/2}" y="${top+182}" font-size="10" text-anchor="middle" style="fill:var(--pcb-ink)">DevKit V1</text>`;
+    h+=`<text x="${bx+bw/2}" y="${top+196}" font-size="10" text-anchor="middle" style="fill:var(--pcb-ink)">30 pines</text>`;
+    h+=`<rect x="${bx+bw/2-22}" y="${bEnd-8}" width="44" height="18" rx="3" style="fill:var(--c-pwr)"/>`;
+    h+=`<text x="${bx+bw/2}" y="${bEnd+26}" font-size="10" text-anchor="middle" class="t-mut">USB</text>`;
+    const row=(pin,i,side)=>{
+      const y=top+i*rh+8, f=fn(pin,v,side), c=COL[f[0]]; used[f[0]]=1;
+      const px=side==='L'?bx+12:bx+bw-12;
+      const lbl=ALIAS[pin]||pin;
+      h+=`<circle cx="${px}" cy="${y}" r="6" style="fill:var(--pad)"/><circle cx="${px}" cy="${y}" r="2.5" style="fill:var(--pcb)"/>`;
+      h+=`<text x="${side==='L'?px+12:px-12}" y="${y+4}" font-size="11.5" font-weight="600" text-anchor="${side==='L'?'start':'end'}" style="fill:var(--pcb-ink);font-family:var(--f-mono)">${esc(lbl)}</text>`;
+      const lw=210, lx=side==='L'?bx-lw-14:bx+bw+14;
+      h+=`<line x1="${side==='L'?bx:bx+bw}" y1="${y}" x2="${side==='L'?lx+lw:lx}" y2="${y}" stroke-width="2" style="stroke:var(${c})"/>`;
+      h+=`<rect x="${lx}" y="${y-11}" width="${lw}" height="22" rx="5" style="fill:color-mix(in srgb,var(${c}) 16%,var(--surface));stroke:var(${c});stroke-width:1"/>`;
+      h+=`<circle cx="${lx+12}" cy="${y}" r="4" style="fill:var(${c})"/>`;
+      h+=`<text x="${lx+22}" y="${y+4}" font-size="12" class="t-ink" ${f[0]==='no'?'style="fill:var(--muted)"':''}>${esc(f[1])}</text>`;
+    };
+    LEFT.forEach((p,i)=>row(p,i,'L'));
+    RIGHT.forEach((p,i)=>row(p,i,'R'));
+    $('pinsvg').innerHTML=h;
+    $('legend').innerHTML=Object.keys(COL).filter(k=>used[k]).map(k=>`<span><i style="background:var(${COL[k]})"></i>${NAMES[k]}</span>`).join('');
+    $('pinnote').textContent=v===1
+      ? 'En la V1 se usan todos los pines libres. Por eso los dos ultrasonidos comparten el TRIG (GPIO 23); el código los mide por turnos.'
+      : 'En la V2 cada ultrasonido tiene su propio TRIG y el GPIO 21 queda para un botón de reset opcional. Si no lo conectan, no pasa nada.';
+  }
+
+  function comps(v){
+    $('comps').innerHTML=COMPS(v).map(c=>`<div class="comp"><header><i style="background:var(${COL[c.k]})"></i><h3>${esc(c.t)}</h3></header><table><tbody>${
+      c.r.map(r=>`<tr><td>${esc(r[0])}</td><td><span class="gp" style="--k:var(${COL[c.k]})">${esc(r[1])}</span>${r[2]?`<span class="note">${esc(r[2])}</span>`:''}</td></tr>`).join('')
+    }</tbody></table></div>`).join('');
+  }
+
+  function set(v){
+    $('btn-v1').setAttribute('aria-pressed',v===1);
+    $('btn-v2').setAttribute('aria-pressed',v===2);
+    svg(v); comps(v);
+    try{localStorage.setItem('guia-version',v)}catch(e){}
+  }
+  $('btn-v1').addEventListener('click',()=>set(1));
+  $('btn-v2').addEventListener('click',()=>set(2));
+  let v0=1; try{if(localStorage.getItem('guia-version')==='2')v0=2}catch(e){}
+  set(v0);
+
+  // Patrones del buzzer (ms encendido / apagado, igual que en el código)
+  const PATS=[
+    ['Robot entra o sale','3 pitidos cortos',[120,80,120,80,120]],
+    ['Tiempo excedido','más de 90 s',[300,150,300]],
+    ['Planta llena','acceso denegado',[800]],
+    ['Reset','sistema reiniciado',[80,80,300]],
+    ['Emergencia','se repite 10 s',[400,200,400]],
+  ];
+  const MAX=1000;
+  let ph='';
+  PATS.forEach(p=>{
+    let t=0,bars='';
+    p[2].forEach((d,i)=>{ if(i%2===0) bars+=`<b style="left:${t/MAX*100}%;width:${d/MAX*100}%"></b>`; t+=d; });
+    ph+=`<div class="lbl">${p[0]}<small>${p[1]}</small></div><div class="track" role="img" aria-label="${p[0]}: ${p[2].join(', ')} ms">${bars}</div>`;
+  });
+  ph+=`<div class="axis"><span>0</span><span>250</span><span>500</span><span>750</span><span>1000 ms</span></div>`;
+  $('pats').innerHTML=ph;
+})();
+</script>
