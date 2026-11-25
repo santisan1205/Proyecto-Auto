@@ -20,14 +20,17 @@
         (sensor montado arriba de la zona de acceso mirando hacia abajo).
      4. Captura la foto (OV7670) y la asocia a un ID (T01..T12).
      5. Pantalla OLED local con conteo, estado de puertas, lista y avisos.
-     6. Pulsador: pulsación corta = EMERGENCIA (abre ambas puertas);
-        mantener 3 s = RESET (cierra puertas y reinicia contadores).
+     6. Pulsador de EMERGENCIA (abre ambas puertas) + pulsador de RESET
+        (botón BOOT de la placa: cierra puertas y reinicia contadores).
+        Mantener el pulsador de emergencia 3 s también hace RESET.
    Funcionalidades adicionales:
      1. Dashboard web (WiFi) con ID, foto, tiempo dentro e historial.
      2. Apertura remota de las puertas desde el dashboard.
      3. Señal sonora (buzzer) cada vez que un robot entra o sale.
    Extras: alerta si alguien supera 90 s, autocalibración del
-   ultrasonido, comandos por Monitor Serie para simular entradas.
+   ultrasonido (también bajo demanda), marcar desde el dashboard quién
+   va a salir, conteo de entradas/salidas durante la emergencia y
+   comandos por Monitor Serie para simular entradas.
   =====================================================================
 */
 
@@ -87,19 +90,25 @@ const char* MDNS_NAME = "fabrica";         // -> http://fabrica.local
 #define OLED_ALTO      64
 
 // Ultrasonidos HC-SR04. En esta versión los dos sensores comparten el pin
-// TRIG (no quedan más pines libres). ECHO con divisor de voltaje 1k/2k.
+// TRIG (no quedan más pines libres). Se leen por turnos, así que solo se
+// escucha el ECHO de una puerta a la vez. ECHO con divisor de voltaje 1k/2k.
 #define PIN_TRIG_ENTRADA  23
 #define PIN_ECHO_ENTRADA  36   // VP (solo entrada)
 #define PIN_TRIG_SALIDA   23   // compartido con la entrada
 #define PIN_ECHO_SALIDA   39   // VN (solo entrada)
 
 // Servomotores (señal). Alimentarlos con 5V externos, GND común.
+// El servo de salida NO va en el GPIO 12: es un pin de arranque y si está
+// en HIGH al encender, el ESP32 no arranca. El GPIO 15 no tiene ese problema.
 #define PIN_SERVO_ENTRADA 25
-#define PIN_SERVO_SALIDA  12
+#define PIN_SERVO_SALIDA  15
 
-// Pulsador (a GND): corto = emergencia, mantener 3 s = reset
-#define PIN_BOTON          15
-#define PIN_BOTON_RESET    -1   // -1 = no hay botón de reset separado
+// Pulsador de emergencia (a GND): corto = emergencia, mantener 3 s = reset.
+// En el GPIO 12 no molesta al arranque porque el botón solo lo lleva a GND.
+#define PIN_BOTON          12
+// Pulsador de reset: el botón BOOT de la placa (GPIO 0). No necesita cables.
+// Pon -1 para desactivarlo.
+#define PIN_BOTON_RESET     0
 
 // Buzzer ACTIVO (HIGH = suena). El LED azul de la placa también parpadea.
 #define PIN_BUZZER          2
@@ -124,6 +133,10 @@ const uint32_t PUERTA_ESPERA_LIBRE_MS = 1500;  // cierra 1.5 s después de que p
 const uint32_t PUERTA_ABIERTA_MAX_MS  = 10000;
 const uint32_t APERTURA_REMOTA_MS     = 5000;
 
+// Salida: tiempo durante el cual vale la marca "este trabajador va a salir"
+// hecha desde el dashboard o el Monitor Serie.
+const uint32_t VIGENCIA_MARCA_SALIDA_MS = 60000;
+
 // Botones
 const uint32_t PULSACION_LARGA_MS = 3000;
 const uint32_t ANTIRREBOTE_MS     = 30;
@@ -135,6 +148,9 @@ const uint32_t DURACION_ALARMA_EMERG_MS = 10000;
 // Fotos
 const int     MAX_FOTOS     = 40;   // fotos guardadas en memoria (LittleFS)
 const uint8_t CALIDAD_JPEG  = 80;
+// Si las fotos salen con colores raros (azules/verdes cambiados o con
+// "ruido" de colores), pon esto en true: invierte el orden de bytes RGB565.
+const bool    CAM_INVERTIR_BYTES = false;
 
 // =====================================================================
 //                       TIPOS Y VARIABLES GLOBALES
@@ -183,10 +199,11 @@ struct Puerta {
   uint32_t     tUltimaPresencia;
   bool         remota;
   float        ultimaAltura;
+  bool         ocupada;          // solo en emergencia: hay alguien bajo el sensor
 };
 Puerta puertas[2] = {
-  { "Entrada", true,  PIN_TRIG_ENTRADA, PIN_ECHO_ENTRADA, PIN_SERVO_ENTRADA, 4, ALTURA_SENSOR_DEFECTO_CM, P_CERRADA, 0, 0, 0, false, 0 },
-  { "Salida",  false, PIN_TRIG_SALIDA,  PIN_ECHO_SALIDA,  PIN_SERVO_SALIDA,  5, ALTURA_SENSOR_DEFECTO_CM, P_CERRADA, 0, 0, 0, false, 0 },
+  { "Entrada", true,  PIN_TRIG_ENTRADA, PIN_ECHO_ENTRADA, PIN_SERVO_ENTRADA, 4, ALTURA_SENSOR_DEFECTO_CM, P_CERRADA, 0, 0, 0, false, 0, false },
+  { "Salida",  false, PIN_TRIG_SALIDA,  PIN_ECHO_SALIDA,  PIN_SERVO_SALIDA,  5, ALTURA_SENSOR_DEFECTO_CM, P_CERRADA, 0, 0, 0, false, 0, false },
 };
 
 struct Boton {
@@ -209,6 +226,8 @@ uint32_t contadorVisitas = 0;
 uint32_t bootId          = 0;
 uint32_t tUltimaMedicion = 0;
 uint8_t  puertaTurno     = 0;
+uint32_t visitaMarcadaSalida = 0;   // 0 = nadie marcado
+uint32_t tMarcaSalida        = 0;
 
 WebServer server(80);
 Adafruit_SSD1306 oled(OLED_ANCHO, OLED_ALTO, &Wire, -1);
@@ -264,6 +283,12 @@ void actualizarBuzzer() {
     return;
   }
   digitalWrite(PIN_BUZZER, (patronIdx % 2 == 0) ? HIGH : LOW);
+}
+
+// Espera sin congelar el buzzer (se usa en las mediciones que tardan)
+void esperarActivo(uint32_t ms) {
+  uint32_t t0 = millis();
+  while (millis() - t0 < ms) { actualizarBuzzer(); delay(1); }
 }
 
 // =====================================================================
@@ -329,7 +354,7 @@ float mediana(float* v, int n) {
 float medirAlturaMediana(Puerta& p, int n) {
   float v[9];
   n = min(n, 9);
-  for (int i = 0; i < n; i++) { v[i] = medirAltura(p); delay(30); }
+  for (int i = 0; i < n; i++) { v[i] = medirAltura(p); esperarActivo(30); }
   return mediana(v, n);
 }
 
@@ -339,7 +364,7 @@ void calibrarSensor(Puerta& p) {
   for (int i = 0; i < 7; i++) {
     float d = medirDistanciaCm(p.pinTrig, p.pinEcho);
     if (d > 2 && d < 200) v[validas++] = d;
-    delay(60);
+    esperarActivo(60);
   }
   if (validas >= 4) p.alturaSensor = mediana(v, validas);
   else              p.alturaSensor = ALTURA_SENSOR_DEFECTO_CM;
@@ -390,14 +415,24 @@ bool capturarJPEG(const String& ruta) {
   if (fb) esp_camera_fb_return(fb);
   fb = esp_camera_fb_get();
   if (!fb) return false;
+  if (CAM_INVERTIR_BYTES && fb->format == PIXFORMAT_RGB565) {
+    for (size_t i = 0; i + 1 < fb->len; i += 2) {
+      uint8_t b = fb->buf[i]; fb->buf[i] = fb->buf[i + 1]; fb->buf[i + 1] = b;
+    }
+  }
   uint8_t* jpg = nullptr; size_t len = 0;
   bool ok = frame2jpg(fb, CALIDAD_JPEG, &jpg, &len);
   esp_camera_fb_return(fb);
   if (!ok) return false;
+  // OJO: un File cerrado vale false, así que el resultado se guarda ANTES de close()
+  bool guardada = false;
   File f = LittleFS.open(ruta, "w");
-  if (f) { f.write(jpg, len); f.close(); }
+  if (f) {
+    guardada = f.write(jpg, len) == len;
+    f.close();
+  }
   free(jpg);
-  return (bool)f;
+  return guardada;
 }
 
 bool capturarFoto(uint32_t visita) {
@@ -466,8 +501,8 @@ void actualizarOLED() {
     oled.setCursor(4, 6);   oled.print("EMERGENCIA");
     oled.setTextSize(1);
     oled.setCursor(10, 32); oled.print("Puertas ABIERTAS");
-    oled.setCursor(4, 48);  oled.print("Mantener boton 3s");
-    oled.setCursor(28, 56); oled.print("para RESET");
+    oled.setCursor(13, 46); oled.print("RESET: boton BOOT");
+    oled.setCursor(4, 56);  oled.print("o mantener boton 3s");
     oled.display();
     return;
   }
@@ -543,8 +578,29 @@ int buscarSlotLibre() {
   return -1;
 }
 
-// Sin lector de tarjetas no se sabe QUIÉN sale; se asume que sale el
-// trabajador del mismo tipo que lleva más tiempo dentro (FIFO por tipo).
+// Trabajador marcado (desde el dashboard o el Monitor Serie) como el
+// próximo en salir. Devuelve su posición, o -1 si no hay marca vigente.
+int slotMarcadoSalida() {
+  if (!visitaMarcadaSalida) return -1;
+  if (millis() - tMarcaSalida >= VIGENCIA_MARCA_SALIDA_MS) { visitaMarcadaSalida = 0; return -1; }
+  for (int i = 0; i < MAX_TRABAJADORES; i++)
+    if (trabajadores[i].dentro && trabajadores[i].visita == visitaMarcadaSalida) return i;
+  visitaMarcadaSalida = 0;
+  return -1;
+}
+
+bool marcarSalida(int slot) {
+  if (slot < 0 || slot >= MAX_TRABAJADORES || !trabajadores[slot].dentro) return false;
+  visitaMarcadaSalida = trabajadores[slot].visita;
+  tMarcaSalida = millis();
+  mostrarMensaje("SALIDA", trabajadores[slot].id, "Marcado para salir");
+  logEvento("%s marcado como proxima salida", trabajadores[slot].id);
+  return true;
+}
+
+// Sin lector de tarjetas el sensor no sabe QUIÉN sale. Si alguien fue
+// marcado como próxima salida, se usa esa marca. Si no, se asume que sale
+// el trabajador del mismo tipo que lleva más tiempo dentro (FIFO por tipo).
 int buscarParaSalida(Tipo t) {
   int mejor = -1, cualquiera = -1;
   for (int i = 0; i < MAX_TRABAJADORES; i++) {
@@ -585,7 +641,12 @@ void registrarSalida(Tipo t, Puerta& p) {
   abrirPuerta(p);                       // por seguridad siempre se deja salir
   if (t == ROBOT) SONAR(PAT_ROBOT); else if (BEEP_HUMANOS) SONAR(PAT_HUMANO);
 
-  int slot = buscarParaSalida(t);
+  int slot = slotMarcadoSalida();
+  visitaMarcadaSalida = 0;              // la marca se usa una sola vez
+  if (slot >= 0 && trabajadores[slot].tipo != t)
+    logEvento("Aviso: %s es %s, el sensor vio %s", trabajadores[slot].id,
+              nombreTipo(trabajadores[slot].tipo), nombreTipo(t));
+  if (slot < 0) slot = buscarParaSalida(t);
   if (slot < 0) {
     logEvento("Salida de %s sin registro de entrada", nombreTipo(t));
     mostrarMensaje("SALE", "?", "Sin registro");
@@ -659,12 +720,25 @@ void actualizarPuerta(Puerta& p) {
   }
 }
 
+// En emergencia las puertas quedan abiertas, pero se sigue contando quién
+// pasa: así el dashboard muestra quién sigue dentro durante la evacuación.
+void vigilarPuertaEmergencia(Puerta& p) {
+  float h = medirAltura(p);
+  bool hay = h >= ALTURA_MIN_PRESENCIA_CM;
+  p.ultimaAltura = h;
+  if (hay == p.ocupada) { p.conteo = 0; return; }
+  if (++p.conteo < LECTURAS_CONFIRMACION) return;
+  p.conteo = 0;
+  p.ocupada = hay;
+  if (hay) procesarLlegada(p);            // registra; la puerta ya está abierta
+}
+
 void actualizarPuertas() {
-  if (emergencia) return;                 // en emergencia quedan abiertas
   if (millis() - tUltimaMedicion < PERIODO_MEDICION_MS) return;
   tUltimaMedicion = millis();
   puertaTurno ^= 1;                       // alterna para no mezclar ecos
-  actualizarPuerta(puertas[puertaTurno]);
+  if (emergencia) vigilarPuertaEmergencia(puertas[puertaTurno]);
+  else            actualizarPuerta(puertas[puertaTurno]);
 }
 
 // =====================================================================
@@ -674,13 +748,18 @@ void activarEmergencia(const char* origen) {
   if (emergencia) return;
   emergencia = true;
   tEmergencia = millis();
-  for (auto& p : puertas) abrirPuerta(p);
+  for (auto& p : puertas) {
+    // Si la puerta estaba abierta o en rearme, quien está debajo ya se contó
+    p.ocupada = (p.estado != P_CERRADA);
+    abrirPuerta(p);
+  }
   SONAR(PAT_EMERGENCIA);
   logEvento("EMERGENCIA activada (%s)", origen);
 }
 
 void resetSistema(const char* origen) {
   emergencia = false;
+  visitaMarcadaSalida = 0;
   uint32_t now = millis();
   for (auto& w : trabajadores) {
     if (w.dentro) cerrarHistorial(w.visita, now);
@@ -720,7 +799,7 @@ void leerBotones() {
   int e = leerBoton(boton);
   if (e == 1) activarEmergencia("boton");
   if (e == 2) resetSistema("boton");
-  if (leerBoton(botonReset) == 1) resetSistema("boton reset");
+  if (leerBoton(botonReset) != 0) resetSistema("boton BOOT");
 }
 
 // =====================================================================
@@ -753,6 +832,8 @@ void handleEstado() {
   j += ",\"tmax\":"; j += TIEMPO_MAX_PERMANENCIA_MS / 1000;
   j += ",\"humanos\":"; j += h;
   j += ",\"robots\":"; j += r;
+  int marcado = slotMarcadoSalida();
+  j += ",\"proxSalida\":"; j += marcado >= 0 ? trabajadores[marcado].visita : 0;
 
   j += ",\"puertas\":[";
   for (int i = 0; i < 2; i++) {
@@ -809,8 +890,9 @@ void handleEstado() {
 }
 
 void handleFoto() {
-  String ruta = "/f" + server.arg("v") + ".jpg";
-  if (!LittleFS.exists(ruta)) { server.send(404, "text/plain", "sin foto"); return; }
+  uint32_t v = (uint32_t)server.arg("v").toInt();   // solo números: evita rutas raras
+  String ruta = rutaFoto(v);
+  if (v == 0 || !LittleFS.exists(ruta)) { server.send(404, "text/plain", "sin foto"); return; }
   File f = LittleFS.open(ruta, "r");
   server.sendHeader("Cache-Control", "max-age=86400");
   server.streamFile(f, "image/jpeg");
@@ -838,6 +920,29 @@ void handleAbrir() {
 void handleEmergencia() { activarEmergencia("dashboard"); enviarJSON(200, "{\"ok\":true}"); }
 void handleReset()      { resetSistema("dashboard");      enviarJSON(200, "{\"ok\":true}"); }
 
+// Recalibra la distancia al piso de los dos sensores (la zona debe estar vacía)
+void handleCalibrar() {
+  for (auto& p : puertas) calibrarSensor(p);
+  enviarJSON(200, "{\"ok\":true}");
+}
+
+// ?id=T03 marca a ese trabajador como el próximo en salir; ?id= (vacío) cancela
+void handleMarcarSalida() {
+  String id = server.arg("id");
+  if (id.length() == 0) {
+    visitaMarcadaSalida = 0;
+    enviarJSON(200, "{\"ok\":true}");
+    return;
+  }
+  for (int i = 0; i < MAX_TRABAJADORES; i++)
+    if (trabajadores[i].dentro && id == trabajadores[i].id) {
+      marcarSalida(i);
+      enviarJSON(200, "{\"ok\":true}");
+      return;
+    }
+  enviarJSON(404, "{\"ok\":false,\"error\":\"ese trabajador no esta dentro\"}");
+}
+
 void iniciarWeb() {
   server.on("/", HTTP_GET, []() { server.send_P(200, "text/html", DASHBOARD_HTML); });
   server.on("/api/estado", HTTP_GET, handleEstado);
@@ -846,6 +951,8 @@ void iniciarWeb() {
   server.on("/api/abrir", HTTP_POST, handleAbrir);
   server.on("/api/emergencia", HTTP_POST, handleEmergencia);
   server.on("/api/reset", HTTP_POST, handleReset);
+  server.on("/api/calibrar", HTTP_POST, handleCalibrar);
+  server.on("/api/marcar-salida", HTTP_POST, handleMarcarSalida);
   server.onNotFound([]() { server.send(404, "text/plain", "No encontrado"); });
   server.begin();
 }
@@ -875,6 +982,7 @@ void iniciarWiFi() {
 void imprimirAyuda() {
   Serial.println(F("Comandos: eh/er = entra humano/robot | sh/sr = sale humano/robot"));
   Serial.println(F("          em = emergencia | rs = reset | st = estado | d = distancias"));
+  Serial.println(F("          cal = recalibrar sensores | p3 = marcar a T03 como proxima salida"));
 }
 
 void leerSerial() {
@@ -887,6 +995,10 @@ void leerSerial() {
   else if (c == "sr") registrarSalida(ROBOT,   puertas[1]);
   else if (c == "em") activarEmergencia("serial");
   else if (c == "rs") resetSistema("serial");
+  else if (c == "cal") { for (auto& p : puertas) calibrarSensor(p); }
+  else if (c.length() >= 2 && c[0] == 'p' && isDigit(c[1])) {
+    if (!marcarSalida(c.substring(1).toInt() - 1)) Serial.println(F("Ese trabajador no esta dentro"));
+  }
   else if (c == "d") {
     for (auto& p : puertas)
       Serial.printf("%s: piso %.1f cm, altura objeto %.1f cm\n", p.nombre, p.alturaSensor, medirAltura(p));

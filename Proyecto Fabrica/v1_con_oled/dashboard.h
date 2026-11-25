@@ -48,6 +48,9 @@ button.red{background:var(--bad)}button.gray{background:var(--mu)}
 .w.al .tm{color:var(--bad)}
 .bar{height:4px;background:var(--bd)}.bar div{height:100%;background:var(--ok)}
 .w.al .bar div{background:var(--bad)}
+.w.sel{border-color:var(--warn);box-shadow:0 0 0 2px var(--warn)}
+.w .mk{display:block;width:calc(100% - 20px);margin:0 10px 10px;padding:6px 8px;font-size:12px;background:var(--mu)}
+.w.sel .mk{background:var(--warn)}
 .empty{color:var(--mu);font-size:14px;padding:8px 0}
 .tw{overflow-x:auto}
 table{width:100%;border-collapse:collapse;font-size:14px}
@@ -66,7 +69,7 @@ dialog img{display:block;width:min(90vw,480px);image-rendering:pixelated}
   <span class="st"><span id="dot" class="dot"></span><span id="con">Conectando…</span></span>
 </header>
 <main>
-  <div id="banner" class="banner">⚠ EMERGENCIA ACTIVA — Puertas abiertas</div>
+  <div id="banner" class="banner">⚠ EMERGENCIA ACTIVA — Puertas abiertas (se sigue contando quién sale)</div>
 
   <section class="kpis">
     <div class="card kpi"><div class="v" id="kH">–</div><div class="l">Humanos en planta</div></div>
@@ -83,11 +86,13 @@ dialog img{display:block;width:min(90vw,480px);image-rendering:pixelated}
       <button class="red" onclick="post('/api/emergencia','¿Activar EMERGENCIA? Se abrirán ambas puertas.')">Emergencia</button>
       <button class="gray" onclick="post('/api/reset','¿Reiniciar el sistema? Cierra puertas y pone contadores en cero.')">Reset</button>
       <button class="gray" onclick="probarFoto()">Probar cámara</button>
+      <button class="gray" onclick="post('/api/calibrar','Recalibrar los sensores. Las dos zonas de acceso deben estar VACÍAS. ¿Continuar?')">Calibrar sensores</button>
     </div>
   </section>
 
   <section class="card">
     <h2>Trabajadores dentro de la planta</h2>
+    <p class="empty" style="margin:-4px 0 10px">El sensor no sabe quién sale. Pulsa <b>Marcar que sale</b> en la tarjeta de quien va a salir; si no marcas a nadie, se asume que sale el de ese tipo que lleva más tiempo dentro.</p>
     <div class="grid" id="dentro"></div>
   </section>
 
@@ -137,12 +142,16 @@ function render(d){
   const k1=d.boot+':'+d.dentro.map(w=>w.visita).join(',');
   if(k1!==kDentro){
     kDentro=k1;
-    $('#dentro').innerHTML=d.dentro.length?d.dentro.map(w=>`<div class="w" id="w${w.visita}">${foto(w)}<div class="bar"><div></div></div><div class="i"><div><b>${w.id}</b><br>${tipo(w.tipo)}</div><div style="text-align:right"><span class="tm"></span><br><small class="hi"></small></div></div></div>`).join(''):'<div class="empty">No hay nadie dentro de la planta.</div>';
+    $('#dentro').innerHTML=d.dentro.length?d.dentro.map(w=>`<div class="w" id="w${w.visita}">${foto(w)}<div class="bar"><div></div></div><div class="i"><div><b>${w.id}</b><br>${tipo(w.tipo)}</div><div style="text-align:right"><span class="tm"></span><br><small class="hi"></small></div></div><button class="mk" onclick="post('/api/marcar-salida?id='+this.dataset.id)"></button></div>`).join(''):'<div class="empty">No hay nadie dentro de la planta.</div>';
   }
   d.dentro.forEach(w=>{
     const el=$('#w'+w.visita);if(!el)return;
     const s=(d.ahora-w.t)/1000;
     el.classList.toggle('al',w.alerta);
+    const sel=w.visita===d.proxSalida, mk=el.querySelector('.mk');
+    el.classList.toggle('sel',sel);
+    mk.textContent=sel?'Sale este · cancelar':'Marcar que sale';
+    mk.dataset.id=sel?'':w.id;
     el.querySelector('.tm').textContent=dur(s);
     el.querySelector('.hi').textContent='desde '+hora(w.t);
     el.querySelector('.bar div').style.width=Math.min(100,s/d.tmax*100)+'%';

@@ -121,6 +121,10 @@ tr:last-child td{border-bottom:0}
 /* Diagrams */
 .diag svg{display:block;width:100%;height:auto}
 .diag figcaption{font-size:14px;color:var(--muted);margin-top:10px}
+.diag.wide .scroll svg{min-width:760px}
+.diag h3{margin-bottom:12px}
+.flag{font-family:var(--f-mono);font-weight:600;font-size:11px}
+.pinlbl{font-family:var(--f-mono);font-weight:600;font-size:11.5px;fill:var(--pcb-ink)}
 figure{margin:0}
 svg text{font-family:var(--f-body)}
 .t-ink{fill:var(--ink)}.t-mut{fill:var(--muted)}
@@ -164,19 +168,13 @@ footer{color:var(--muted);font-size:13.5px;border-top:1px solid var(--line);padd
 <header class="hero">
   <span class="eyebrow">Automatización Industrial · ESP32</span>
   <h1>Control de acceso a la planta</h1>
-  <p>El sistema detecta a cada trabajador en la puerta, decide si es humano o robot, le toma una foto, le asigna un ID y cuenta cuánto tiempo pasa dentro. Las dos versiones del código hacen lo mismo. Solo cambia dónde se ven los datos.</p>
+  <p>El sistema detecta a cada trabajador en la puerta, decide si es humano o robot, le toma una foto, le asigna un ID y cuenta cuánto tiempo pasa dentro. Los datos se ven en la pantalla OLED de la maqueta y en un dashboard web.</p>
   <div class="versions">
     <div class="ver">
-      <span class="tag">VERSIÓN 1</span>
-      <h3>Con pantalla OLED</h3>
+      <span class="tag">CÓDIGO</span>
+      <h3>Con pantalla OLED + dashboard</h3>
       <ul><li>Pantalla OLED en la maqueta</li><li>Dashboard web en el celular o PC</li><li>Necesita 2 librerías (ya instaladas)</li></ul>
       <span class="folder">v1_con_oled/v1_con_oled.ino</span>
-    </div>
-    <div class="ver">
-      <span class="tag">VERSIÓN 2</span>
-      <h3>Sin pantalla</h3>
-      <ul><li>El dashboard web es el panel local</li><li>Permite un 2.º botón de reset</li><li>No necesita librerías externas</li></ul>
-      <span class="folder">v2_sin_oled/v2_sin_oled.ino</span>
     </div>
   </div>
 </header>
@@ -190,7 +188,8 @@ footer{color:var(--muted);font-size:13.5px;border-top:1px solid var(--line);padd
     <div class="call danger"><span class="ic">3.3 V</span><p>La cámara OV7670 se alimenta con <b>3.3 V</b>. Si la conectan a 5 V se daña.</p></div>
     <div class="call danger"><span class="ic">ECHO</span><p>El pin ECHO de cada ultrasonido saca 5 V. Antes de llegar al ESP32 debe pasar por un <b>divisor de voltaje</b> (1 kΩ y 2 kΩ). El diagrama está más abajo.</p></div>
     <div class="call warn"><span class="ic">FALTA</span><p>Para tener puerta de entrada y puerta de salida hacen falta <b>2 ultrasonidos y 2 servos</b>. Con uno solo, el sistema no sabe si la persona entra o sale.</p></div>
-    <div class="call warn"><span class="ic">GPIO12</span><p>Si la placa no deja cargar el programa, desconecten el servo de salida (GPIO 12) mientras suben el código y vuelvan a conectarlo después.</p></div>
+    <div class="call warn"><span class="ic">GPIO12</span><p>El GPIO 12 es un pin de arranque: si está en HIGH al encender, el ESP32 no arranca. Por eso ahí va el <b>pulsador de emergencia</b> (solo lo lleva a GND) y el <b>servo de salida va en el GPIO 15</b>. No los intercambien.</p></div>
+    <div class="call info"><span class="ic">BOOT</span><p>El botón de <b>reset</b> es el botón BOOT de la placa. No hay que cablear nada. No lo mantengan pulsado al encender, porque la placa entra en modo de carga.</p></div>
   </div>
 </section>
 
@@ -213,7 +212,7 @@ footer{color:var(--muted);font-size:13.5px;border-top:1px solid var(--line);padd
   <div class="flow exit">
     <div class="step"><b>Detecta</b><span>Igual que en la entrada</span></div>
     <div class="step"><b>Mide la altura</b><span>Humano o robot</span></div>
-    <div class="step"><b>Busca quién es</b><span>El de ese tipo que lleva más tiempo dentro</span></div>
+    <div class="step"><b>Busca quién es</b><span>El marcado en el dashboard o, si no hay marca, el de ese tipo que lleva más tiempo dentro</span></div>
     <div class="step"><b>Detiene el contador</b><span>Guarda la permanencia en el historial</span></div>
     <div class="step"><b>Abre la puerta</b><span>La salida siempre abre, por seguridad</span></div>
   </div>
@@ -242,8 +241,8 @@ footer{color:var(--muted);font-size:13.5px;border-top:1px solid var(--line);padd
         <tr><td>Cámara OV7670 <b>sin FIFO</b></td><td class="qty">1</td><td><span class="badge b-ok">En su lista</span></td><td>Foto de cada trabajador. Es la de 18 pines sin chip extra</td></tr>
         <tr><td>Ultrasonido HC-SR04</td><td class="qty">2</td><td><span class="badge b-buy">Falta 1</span></td><td>Uno por puerta. Detecta y mide la altura</td></tr>
         <tr><td>Servomotor SG90 o MG90S</td><td class="qty">2</td><td><span class="badge b-buy">Falta 1</span></td><td>Uno por puerta. Abre y cierra</td></tr>
-        <tr><td>Pulsador</td><td class="qty">1</td><td><span class="badge b-ok">En su lista</span></td><td>Emergencia y reset</td></tr>
-        <tr><td>Pantalla OLED 0.96" I2C (SSD1306)</td><td class="qty">1</td><td><span class="badge b-v1">Solo V1</span></td><td>Panel local en la maqueta</td></tr>
+        <tr><td>Pulsador</td><td class="qty">1</td><td><span class="badge b-ok">En su lista</span></td><td>Emergencia. El reset es el botón BOOT de la placa</td></tr>
+        <tr><td>Pantalla OLED 0.96" I2C (SSD1306)</td><td class="qty">1</td><td><span class="badge b-v1">Panel local</span></td><td>Panel local en la maqueta</td></tr>
         <tr><td>Buzzer <b>activo</b></td><td class="qty">1</td><td><span class="badge b-buy">Comprar</span></td><td>Pitido cuando entra o sale un robot</td></tr>
         <tr><td>Resistencias 1 kΩ y 2 kΩ</td><td class="qty">2+2</td><td><span class="badge b-buy">Comprar</span></td><td>Divisores de voltaje de los ECHO</td></tr>
         <tr><td>Resistencias 4.7 kΩ</td><td class="qty">2</td><td><span class="badge b-buy">Comprar</span></td><td>Pull-ups de SIOC y SIOD de la cámara</td></tr>
@@ -257,13 +256,220 @@ footer{color:var(--muted);font-size:13.5px;border-top:1px solid var(--line);padd
   <div class="sec-head">
     <span class="eyebrow">Cableado</span>
     <h2>Conexiones al ESP32</h2>
-    <p>Elijan la versión. Los pines que cambian entre V1 y V2 son el 21 y el 22.</p>
+    <p>Primero el esquema (qué va con qué), luego la alimentación y al final dónde está cada pin en la placa.</p>
   </div>
-  <div class="toggle" role="group" aria-label="Versión">
-    <button type="button" id="btn-v1" aria-pressed="true">Versión 1 · con OLED</button>
-    <button type="button" id="btn-v2" aria-pressed="false">Versión 2 · sin OLED</button>
-  </div>
+
+  <figure class="box diag wide">
+    <h3>Esquema eléctrico</h3>
+    <div class="scroll">
+    <svg viewBox="0 0 1000 655" role="img" aria-label="Esquema: los dos ultrasonidos comparten TRIG en el GPIO 23 y sus ECHO pasan por divisores 1k/2k a los GPIO 36 y 39; servos en 25 y 15; OLED en 21 y 22; pulsador de emergencia en 12; botón BOOT en el GPIO 0; buzzer en 2; cámara con SIOD en 26 y SIOC en 27 con pull-ups de 4.7k, más un bus de 12 líneas">
+      <!-- ===== ESP32 ===== -->
+      <rect x="400" y="70" width="160" height="520" rx="10" style="fill:var(--pcb)"/>
+      <text x="480" y="326" font-size="17" font-weight="600" text-anchor="middle" style="fill:var(--pcb-ink)">ESP32</text>
+      <text x="480" y="343" font-size="11" text-anchor="middle" style="fill:var(--pcb-ink)">DevKit V1</text>
+      <g style="fill:var(--pad)">
+        <circle cx="400" cy="115" r="4"/><circle cx="400" cy="140" r="4"/><circle cx="400" cy="260" r="4"/><circle cx="400" cy="370" r="4"/><circle cx="400" cy="460" r="4"/>
+        <circle cx="560" cy="115" r="4"/><circle cx="560" cy="140" r="4"/><circle cx="560" cy="230" r="4"/><circle cx="560" cy="290" r="4"/><circle cx="560" cy="365" r="4"/><circle cx="560" cy="440" r="4"/><circle cx="560" cy="465" r="4"/><circle cx="560" cy="540" r="4"/>
+        <circle cx="430" cy="590" r="4"/><circle cx="480" cy="590" r="4"/><circle cx="530" cy="590" r="4"/>
+      </g>
+      <text class="pinlbl" x="410" y="119">GPIO 23</text>
+      <text class="pinlbl" x="410" y="144">GPIO 36</text>
+      <text class="pinlbl" x="410" y="264">GPIO 39</text>
+      <text class="pinlbl" x="410" y="374">GPIO 25</text>
+      <text class="pinlbl" x="410" y="464">GPIO 15</text>
+      <text class="pinlbl" x="550" y="119" text-anchor="end">GPIO 21</text>
+      <text class="pinlbl" x="550" y="144" text-anchor="end">GPIO 22</text>
+      <text class="pinlbl" x="550" y="234" text-anchor="end">GPIO 12</text>
+      <text class="pinlbl" x="550" y="294" text-anchor="end">GPIO 0</text>
+      <text class="pinlbl" x="550" y="369" text-anchor="end">GPIO 2</text>
+      <text class="pinlbl" x="550" y="444" text-anchor="end">GPIO 26</text>
+      <text class="pinlbl" x="550" y="469" text-anchor="end">GPIO 27</text>
+      <text class="pinlbl" x="550" y="544" text-anchor="end">12 GPIO</text>
+      <text class="pinlbl" x="430" y="580" text-anchor="middle" style="font-size:10.5px">VIN</text>
+      <text class="pinlbl" x="480" y="580" text-anchor="middle" style="font-size:10.5px">GND</text>
+      <text class="pinlbl" x="530" y="580" text-anchor="middle" style="font-size:10.5px">3V3</text>
+      <path d="M430 594 V608 M480 594 V608 M530 594 V608" class="s-ink" stroke-width="1.5"/>
+      <text class="flag" x="430" y="622" text-anchor="middle" style="fill:var(--danger)">VIN</text>
+      <text class="flag" x="480" y="622" text-anchor="middle" style="fill:var(--muted)">GND</text>
+      <text class="flag" x="530" y="622" text-anchor="middle" style="fill:var(--accent)">3V3</text>
+      <text x="480" y="645" font-size="11" text-anchor="middle" class="t-mut">El USB alimenta el ESP32; VIN entrega esos 5 V</text>
+
+      <!-- ===== Ultrasonido ENTRADA ===== -->
+      <text x="125" y="86" font-size="12" font-weight="600" text-anchor="middle" style="fill:var(--c-ue)">Ultrasonido ENTRADA</text>
+      <rect x="70" y="95" width="110" height="70" rx="6" style="fill:color-mix(in srgb,var(--c-ue) 14%,var(--surface));stroke:var(--c-ue)"/>
+      <text x="78" y="119" font-size="11" class="t-ink">VCC</text><text x="78" y="144" font-size="11" class="t-ink">GND</text>
+      <text x="172" y="119" font-size="11" text-anchor="end" class="t-ink">TRIG</text><text x="172" y="144" font-size="11" text-anchor="end" class="t-ink">ECHO</text>
+      <path d="M70 115 H56 M70 140 H56" class="s-ink" stroke-width="1.5"/>
+      <text class="flag" x="52" y="119" text-anchor="end" style="fill:var(--danger)">VIN</text>
+      <text class="flag" x="52" y="144" text-anchor="end" style="fill:var(--muted)">GND</text>
+      <path d="M180 115 H400" style="stroke:var(--c-ue)" stroke-width="2" fill="none"/>
+      <text x="212" y="108" font-size="11" style="fill:var(--c-ue)">TRIG compartido</text>
+      <path d="M180 140 H230 M290 140 H400" style="stroke:var(--c-ue)" stroke-width="2" fill="none"/>
+      <path d="M230 140 l5 -6 l10 12 l10 -12 l10 12 l10 -12 l10 12 l5 -6" class="s-ink" stroke-width="2" fill="none" stroke-linejoin="round"/>
+      <text x="260" y="129" font-size="11" text-anchor="middle" class="t-ink" font-weight="600">1k</text>
+      <path d="M330 140 V150 l-6 5 l12 10 l-12 10 l12 10 l-12 10 l12 10 l-6 5 V218" class="s-ink" stroke-width="2" fill="none" stroke-linejoin="round"/>
+      <text x="342" y="184" font-size="11" class="t-ink" font-weight="600">2k</text>
+      <path d="M318 218 H342 M322 224 H338 M326 230 H334" class="s-ink" stroke-width="2"/>
+      <circle cx="330" cy="140" r="3.5" style="fill:var(--ink)"/>
+      <circle cx="200" cy="115" r="3.5" style="fill:var(--c-ue)"/>
+
+      <!-- ===== Ultrasonido SALIDA ===== -->
+      <text x="125" y="206" font-size="12" font-weight="600" text-anchor="middle" style="fill:var(--c-us)">Ultrasonido SALIDA</text>
+      <rect x="70" y="215" width="110" height="70" rx="6" style="fill:color-mix(in srgb,var(--c-us) 14%,var(--surface));stroke:var(--c-us)"/>
+      <text x="78" y="239" font-size="11" class="t-ink">VCC</text><text x="78" y="264" font-size="11" class="t-ink">GND</text>
+      <text x="172" y="239" font-size="11" text-anchor="end" class="t-ink">TRIG</text><text x="172" y="264" font-size="11" text-anchor="end" class="t-ink">ECHO</text>
+      <path d="M70 235 H56 M70 260 H56" class="s-ink" stroke-width="1.5"/>
+      <text class="flag" x="52" y="239" text-anchor="end" style="fill:var(--danger)">VIN</text>
+      <text class="flag" x="52" y="264" text-anchor="end" style="fill:var(--muted)">GND</text>
+      <path d="M180 235 H200 V146 a6 6 0 0 0 0 -12 V115" style="stroke:var(--c-us)" stroke-width="2" fill="none"/>
+      <path d="M180 260 H230 M290 260 H400" style="stroke:var(--c-us)" stroke-width="2" fill="none"/>
+      <path d="M230 260 l5 -6 l10 12 l10 -12 l10 12 l10 -12 l10 12 l5 -6" class="s-ink" stroke-width="2" fill="none" stroke-linejoin="round"/>
+      <text x="260" y="249" font-size="11" text-anchor="middle" class="t-ink" font-weight="600">1k</text>
+      <path d="M330 260 V270 l-6 5 l12 10 l-12 10 l12 10 l-12 10 l12 10 l-6 5 V338" class="s-ink" stroke-width="2" fill="none" stroke-linejoin="round"/>
+      <text x="342" y="304" font-size="11" class="t-ink" font-weight="600">2k</text>
+      <path d="M318 338 H342 M322 344 H338 M326 350 H334" class="s-ink" stroke-width="2"/>
+      <circle cx="330" cy="260" r="3.5" style="fill:var(--ink)"/>
+
+      <!-- ===== Servos ===== -->
+      <text x="125" y="333" font-size="12" font-weight="600" text-anchor="middle" style="fill:var(--c-servo)">Servo ENTRADA</text>
+      <rect x="70" y="340" width="110" height="60" rx="6" style="fill:color-mix(in srgb,var(--c-servo) 14%,var(--surface));stroke:var(--c-servo)"/>
+      <text x="78" y="362" font-size="11" class="t-ink">+ rojo</text><text x="78" y="389" font-size="11" class="t-ink">− marrón</text>
+      <text x="172" y="374" font-size="11" text-anchor="end" class="t-ink">señal</text>
+      <path d="M70 358 H56 M70 385 H56" class="s-ink" stroke-width="1.5"/>
+      <text class="flag" x="52" y="362" text-anchor="end" style="fill:var(--danger)">5V F</text>
+      <text class="flag" x="52" y="389" text-anchor="end" style="fill:var(--muted)">GND</text>
+      <path d="M180 370 H400" style="stroke:var(--c-servo)" stroke-width="2" fill="none"/>
+
+      <text x="125" y="423" font-size="12" font-weight="600" text-anchor="middle" style="fill:var(--c-servo)">Servo SALIDA</text>
+      <rect x="70" y="430" width="110" height="60" rx="6" style="fill:color-mix(in srgb,var(--c-servo) 14%,var(--surface));stroke:var(--c-servo)"/>
+      <text x="78" y="452" font-size="11" class="t-ink">+ rojo</text><text x="78" y="479" font-size="11" class="t-ink">− marrón</text>
+      <text x="172" y="464" font-size="11" text-anchor="end" class="t-ink">señal</text>
+      <path d="M70 448 H56 M70 475 H56" class="s-ink" stroke-width="1.5"/>
+      <text class="flag" x="52" y="452" text-anchor="end" style="fill:var(--danger)">5V F</text>
+      <text class="flag" x="52" y="479" text-anchor="end" style="fill:var(--muted)">GND</text>
+      <path d="M180 460 H400" style="stroke:var(--c-servo)" stroke-width="2" fill="none"/>
+      <text x="125" y="508" font-size="11" text-anchor="middle" style="fill:var(--warn)" font-weight="600">GPIO 15, nunca el 12</text>
+      <text x="20" y="556" font-size="11" class="t-mut">5V F = fuente externa de 5 V y 2 A.</text>
+      <text x="20" y="572" font-size="11" class="t-mut">Su GND se une al GND del ESP32.</text>
+
+      <!-- ===== OLED ===== -->
+      <text x="835" y="86" font-size="12" font-weight="600" text-anchor="middle" style="fill:var(--c-oled)">Pantalla OLED</text>
+      <rect x="780" y="95" width="110" height="70" rx="6" style="fill:color-mix(in srgb,var(--c-oled) 14%,var(--surface));stroke:var(--c-oled)"/>
+      <text x="788" y="119" font-size="11" class="t-ink">SDA</text><text x="788" y="144" font-size="11" class="t-ink">SCL</text>
+      <text x="882" y="119" font-size="11" text-anchor="end" class="t-ink">VCC</text><text x="882" y="144" font-size="11" text-anchor="end" class="t-ink">GND</text>
+      <path d="M890 115 H906 M890 140 H906" class="s-ink" stroke-width="1.5"/>
+      <text class="flag" x="910" y="119" style="fill:var(--accent)">3V3</text>
+      <text class="flag" x="910" y="144" style="fill:var(--muted)">GND</text>
+      <path d="M560 115 H780 M560 140 H780" style="stroke:var(--c-oled)" stroke-width="2" fill="none"/>
+
+      <!-- ===== Pulsador de emergencia ===== -->
+      <text x="812" y="205" font-size="12" font-weight="600" text-anchor="middle" style="fill:var(--c-btn)">Pulsador emergencia</text>
+      <path d="M560 230 H792" style="stroke:var(--c-btn)" stroke-width="2" fill="none"/>
+      <circle cx="795" cy="230" r="3" class="s-ink" stroke-width="1.5" style="fill:var(--surface)"/>
+      <path d="M797 228 L826 214" class="s-ink" stroke-width="2"/>
+      <circle cx="830" cy="230" r="3" class="s-ink" stroke-width="1.5" style="fill:var(--surface)"/>
+      <path d="M833 230 H860 V240 M848 240 H872 M852 246 H868 M856 252 H864" class="s-ink" stroke-width="2" fill="none"/>
+      <text x="675" y="250" font-size="11" text-anchor="middle" class="t-mut">pull-up interno: sin resistencia</text>
+
+      <!-- ===== BOOT ===== -->
+      <text x="812" y="268" font-size="12" font-weight="600" text-anchor="middle" style="fill:var(--c-btn)">Botón BOOT = reset</text>
+      <path d="M560 290 H792" style="stroke:var(--c-btn)" stroke-width="2" stroke-dasharray="6 4" fill="none"/>
+      <circle cx="795" cy="290" r="3" class="s-ink" stroke-width="1.5" style="fill:var(--surface)"/>
+      <path d="M797 288 L826 274" class="s-ink" stroke-width="2"/>
+      <circle cx="830" cy="290" r="3" class="s-ink" stroke-width="1.5" style="fill:var(--surface)"/>
+      <path d="M833 290 H860 V300 M848 300 H872 M852 306 H868 M856 312 H864" class="s-ink" stroke-width="2" fill="none"/>
+      <text x="675" y="310" font-size="11" text-anchor="middle" class="t-mut">ya viene en la placa: no se cablea</text>
+
+      <!-- ===== Buzzer ===== -->
+      <text x="803" y="340" font-size="12" font-weight="600" text-anchor="middle" style="fill:var(--c-buz)">Buzzer activo</text>
+      <path d="M560 365 H790" style="stroke:var(--c-buz)" stroke-width="2" fill="none"/>
+      <circle cx="803" cy="365" r="13" style="fill:var(--surface);stroke:var(--c-buz);stroke-width:2"/>
+      <text x="803" y="369" font-size="11" text-anchor="middle" class="t-ink" font-weight="600">+</text>
+      <path d="M816 365 H860 V377 M848 377 H872 M852 383 H868 M856 389 H864" class="s-ink" stroke-width="2" fill="none"/>
+
+      <!-- ===== Cámara ===== -->
+      <text x="835" y="412" font-size="12" font-weight="600" text-anchor="middle" style="fill:var(--c-cam)">Cámara OV7670</text>
+      <rect x="780" y="420" width="110" height="140" rx="6" style="fill:color-mix(in srgb,var(--c-cam) 14%,var(--surface));stroke:var(--c-cam)"/>
+      <text x="788" y="444" font-size="11" class="t-ink">SIOD</text><text x="788" y="469" font-size="11" class="t-ink">SIOC</text><text x="788" y="544" font-size="11" class="t-ink">datos</text>
+      <text x="882" y="444" font-size="11" text-anchor="end" class="t-ink">VCC</text><text x="882" y="469" font-size="11" text-anchor="end" class="t-ink">GND</text>
+      <text x="835" y="505" font-size="10.5" text-anchor="middle" class="t-mut">cables &lt; 15 cm</text>
+      <path d="M890 440 H906 M890 465 H906" class="s-ink" stroke-width="1.5"/>
+      <text class="flag" x="910" y="444" style="fill:var(--accent)">3V3 · RESET</text>
+      <text class="flag" x="910" y="469" style="fill:var(--muted)">GND · PWDN</text>
+      <path d="M560 440 H780 M560 465 H780" style="stroke:var(--c-cam)" stroke-width="2" fill="none"/>
+      <path d="M560 540 H780" style="stroke:var(--c-cam)" stroke-width="6" fill="none"/>
+      <text x="670" y="562" font-size="11" text-anchor="middle" class="t-mut">D0–D7 · VSYNC · HREF · PCLK · XCLK</text>
+      <path d="M700 440 V434 l-6 -3 l12 -6 l-12 -6 l12 -6 l-12 -6 l12 -6 l-6 -3 V394" class="s-ink" stroke-width="2" fill="none" stroke-linejoin="round"/>
+      <text class="flag" x="700" y="389" text-anchor="middle" style="fill:var(--accent)">3V3</text>
+      <text x="712" y="420" font-size="11" class="t-ink" font-weight="600">4.7k</text>
+      <path d="M740 465 V471 l-6 3 l12 6 l-12 6 l12 6 l-12 6 l12 6 l-6 3 V513" class="s-ink" stroke-width="2" fill="none" stroke-linejoin="round"/>
+      <text class="flag" x="740" y="526" text-anchor="middle" style="fill:var(--accent)">3V3</text>
+      <text x="752" y="493" font-size="11" class="t-ink" font-weight="600">4.7k</text>
+      <circle cx="700" cy="440" r="3.5" style="fill:var(--ink)"/><circle cx="740" cy="465" r="3.5" style="fill:var(--ink)"/>
+    </svg>
+    </div>
+    <figcaption>Cada etiqueta de color en la punta de un cable es una red: todo lo que dice <b>VIN</b> va unido entre sí, igual con <b>3V3</b>, <b>5V F</b> y <b>GND</b>. Los dos ultrasonidos reciben el mismo TRIG; el código escucha un ECHO a la vez. El cable a trazos es el botón BOOT, que ya está en la placa. Los 12 cables del bus de la cámara están pin por pin en la tabla de abajo.</figcaption>
+  </figure>
+
+  <figure class="box diag wide">
+    <h3>Alimentación</h3>
+    <div class="scroll">
+    <svg viewBox="0 0 920 330" role="img" aria-label="El USB alimenta el ESP32, que da VIN de 5 V a los dos ultrasonidos y 3.3 V a la cámara, la OLED y las pull-ups. Una fuente externa de 5 V alimenta solo los servos. Todas las tierras van unidas, incluida la de la fuente.">
+      <rect x="20" y="36" width="130" height="44" rx="6" class="s-ink" stroke-width="1.5" style="fill:var(--surface)"/>
+      <text x="85" y="63" font-size="12.5" text-anchor="middle" class="t-ink" font-weight="600">USB del PC</text>
+      <path d="M150 58 H192" class="s-ink" stroke-width="2"/><polygon points="200,58 190,52 190,64" style="fill:var(--ink)"/>
+      <text x="172" y="50" font-size="11" text-anchor="middle" class="t-mut">5 V</text>
+      <rect x="200" y="30" width="120" height="140" rx="8" style="fill:var(--pcb)"/>
+      <text x="260" y="95" font-size="14" text-anchor="middle" font-weight="600" style="fill:var(--pcb-ink)">ESP32</text>
+      <text x="260" y="112" font-size="10.5" text-anchor="middle" style="fill:var(--pcb-ink)">regulador 3.3 V</text>
+
+      <path d="M320 60 H900" style="stroke:var(--danger)" stroke-width="3"/>
+      <text x="330" y="52" font-size="12" font-weight="600" style="fill:var(--danger)">VIN · 5 V del USB</text>
+      <path d="M320 140 H900" style="stroke:var(--accent)" stroke-width="3"/>
+      <text x="330" y="132" font-size="12" font-weight="600" style="fill:var(--accent)">3V3 · regulador del ESP32</text>
+
+      <rect x="20" y="198" width="130" height="50" rx="6" class="s-ink" stroke-width="1.5" style="fill:var(--surface)"/>
+      <text x="85" y="219" font-size="12.5" text-anchor="middle" class="t-ink" font-weight="600">Fuente externa</text>
+      <text x="85" y="236" font-size="11" text-anchor="middle" class="t-mut">5 V · 2 A</text>
+      <path d="M150 220 H900" style="stroke:var(--danger)" stroke-width="3" stroke-dasharray="10 5"/>
+      <text x="330" y="212" font-size="12" font-weight="600" style="fill:var(--danger)">5V F · solo servos</text>
+
+      <path d="M85 248 V305 M260 170 V214 a6 6 0 0 1 0 12 V305 M85 305 H900" style="stroke:var(--muted)" stroke-width="3" fill="none"/>
+      <circle cx="85" cy="305" r="5" style="fill:var(--danger)"/><circle cx="260" cy="305" r="4.5" style="fill:var(--muted)"/>
+      <text x="96" y="282" font-size="11.5" font-weight="600" style="fill:var(--danger)">unión obligatoria</text>
+      <text x="900" y="297" font-size="12" font-weight="600" text-anchor="end" style="fill:var(--muted)">GND común · todos los módulos</text>
+
+      <g font-size="11.5" text-anchor="middle">
+        <path d="M480 60 V72 M650 60 V72" style="stroke:var(--danger)" stroke-width="2"/>
+        <circle cx="480" cy="60" r="4" style="fill:var(--danger)"/><circle cx="650" cy="60" r="4" style="fill:var(--danger)"/>
+        <rect x="410" y="72" width="140" height="40" rx="5" style="fill:color-mix(in srgb,var(--c-ue) 14%,var(--surface));stroke:var(--c-ue)"/>
+        <text x="480" y="89" class="t-ink" font-weight="600">HC-SR04 entrada</text><text x="480" y="104" class="t-mut">≈ 15 mA</text>
+        <rect x="580" y="72" width="140" height="40" rx="5" style="fill:color-mix(in srgb,var(--c-us) 14%,var(--surface));stroke:var(--c-us)"/>
+        <text x="650" y="89" class="t-ink" font-weight="600">HC-SR04 salida</text><text x="650" y="104" class="t-mut">≈ 15 mA</text>
+
+        <path d="M480 140 V152 M650 140 V152 M820 140 V152" style="stroke:var(--accent)" stroke-width="2"/>
+        <circle cx="480" cy="140" r="4" style="fill:var(--accent)"/><circle cx="650" cy="140" r="4" style="fill:var(--accent)"/><circle cx="820" cy="140" r="4" style="fill:var(--accent)"/>
+        <rect x="410" y="152" width="140" height="40" rx="5" style="fill:color-mix(in srgb,var(--c-cam) 14%,var(--surface));stroke:var(--c-cam)"/>
+        <text x="480" y="169" class="t-ink" font-weight="600">Cámara OV7670</text><text x="480" y="184" class="t-mut">≈ 20 mA · nunca 5 V</text>
+        <rect x="580" y="152" width="140" height="40" rx="5" style="fill:color-mix(in srgb,var(--c-oled) 14%,var(--surface));stroke:var(--c-oled)"/>
+        <text x="650" y="169" class="t-ink" font-weight="600">OLED</text><text x="650" y="184" class="t-mut">≈ 20 mA</text>
+        <rect x="750" y="152" width="140" height="40" rx="5" style="fill:color-mix(in srgb,var(--c-cam) 8%,var(--surface));stroke:var(--c-cam);stroke-dasharray:4 3"/>
+        <text x="820" y="169" class="t-ink" font-weight="600">Pull-ups 4.7 kΩ ×2</text><text x="820" y="184" class="t-mut">SIOD y SIOC</text>
+
+        <path d="M480 220 V232 M650 220 V232" style="stroke:var(--danger)" stroke-width="2"/>
+        <circle cx="480" cy="220" r="4" style="fill:var(--danger)"/><circle cx="650" cy="220" r="4" style="fill:var(--danger)"/>
+        <rect x="410" y="232" width="140" height="40" rx="5" style="fill:color-mix(in srgb,var(--c-servo) 14%,var(--surface));stroke:var(--c-servo)"/>
+        <text x="480" y="249" class="t-ink" font-weight="600">Servo entrada</text><text x="480" y="264" class="t-mut">picos ≈ 500 mA</text>
+        <rect x="580" y="232" width="140" height="40" rx="5" style="fill:color-mix(in srgb,var(--c-servo) 14%,var(--surface));stroke:var(--c-servo)"/>
+        <text x="650" y="249" class="t-ink" font-weight="600">Servo salida</text><text x="650" y="264" class="t-mut">picos ≈ 500 mA</text>
+      </g>
+    </svg>
+    </div>
+    <figcaption>Los servos van en su propia fuente porque al moverse piden picos de corriente que el USB no aguanta y reinician el ESP32. Lo que nunca puede faltar es unir el GND de esa fuente con el del ESP32: sin esa unión el servo no entiende la señal. El buzzer se alimenta directo del GPIO 2.</figcaption>
+  </figure>
+
   <div class="box pinout">
+    <h3 style="margin-bottom:12px">Dónde está cada pin en la placa</h3>
     <div class="legend" id="legend"></div>
     <div class="scroll" style="margin-top:14px"><svg id="pinsvg" viewBox="0 0 660 540" role="img" aria-label="Mapa de pines del ESP32"></svg></div>
     <p style="color:var(--muted);font-size:14px;margin-top:10px" id="pinnote"></p>
@@ -342,6 +548,105 @@ footer{color:var(--muted);font-size:13.5px;border-top:1px solid var(--line);padd
   </div>
 </section>
 
+<section class="sec" id="montaje">
+  <div class="sec-head">
+    <span class="eyebrow">Montaje</span>
+    <h2>Armar la maqueta</h2>
+    <p>Dónde va cada cosa en la planta y en qué orden armarla para probar cada parte antes de seguir.</p>
+  </div>
+
+  <figure class="box diag wide">
+    <h3>Distribución de la maqueta</h3>
+    <div class="scroll">
+    <svg viewBox="0 0 900 600" role="img" aria-label="Vista desde arriba de la planta: la puerta de entrada a la izquierda con el ultrasonido por fuera y la cámara apuntando a esa zona; la puerta de salida a la derecha con el ultrasonido por dentro; entre las dos, por fuera, el ESP32, la fuente y el panel de control; una canaleta lleva los cables a la salida.">
+      <!-- medidas generales -->
+      <path d="M110 30 H820 M110 24 V36 M820 24 V36" class="s-mut" stroke-width="1"/>
+      <text x="465" y="22" font-size="11.5" text-anchor="middle" class="t-mut">≈ 70 cm</text>
+
+      <!-- planta -->
+      <rect x="110" y="50" width="710" height="350" style="fill:color-mix(in srgb,var(--accent) 6%,var(--surface))"/>
+      <path d="M200 400 H110 V50 H820 V400 H720 M640 400 H280" class="s-ink" stroke-width="4" fill="none"/>
+      <text x="465" y="140" font-size="22" font-weight="800" text-anchor="middle" letter-spacing="4" class="t-mut" style="font-family:var(--f-display)">PLANTA</text>
+      <text x="465" y="162" font-size="12" text-anchor="middle" class="t-mut">máx. 12 trabajadores</text>
+
+      <!-- distancia entre sensores -->
+      <path d="M240 250 H680" class="s-mut" stroke-width="1" stroke-dasharray="5 4"/>
+      <path d="M240 244 V256 M680 244 V256" class="s-mut" stroke-width="1"/>
+      <path d="M240 256 V439 M680 256 V314" class="s-mut" stroke-width="1" stroke-dasharray="1 4"/>
+      <text x="460" y="242" font-size="11.5" text-anchor="middle" class="t-mut">≈ 44 cm entre sensores · mínimo 20 cm porque comparten el TRIG</text>
+
+      <!-- ===== Entrada ===== -->
+      <path d="M200 400 V525 M280 400 V525" class="s-mut" stroke-width="2"/>
+      <polygon points="288,416 196,452 246,516" style="fill:color-mix(in srgb,var(--c-cam) 16%,transparent)"/>
+      <circle cx="240" cy="465" r="26" style="fill:color-mix(in srgb,var(--c-ue) 18%,var(--surface));stroke:var(--c-ue);stroke-width:1.5" stroke-dasharray="4 3"/>
+      <rect x="194" y="459" width="92" height="12" rx="2" style="fill:var(--c-ue)"/>
+      <circle cx="228" cy="465" r="4" style="fill:var(--surface)"/><circle cx="252" cy="465" r="4" style="fill:var(--surface)"/>
+      <text x="188" y="461" font-size="12" font-weight="600" text-anchor="end" style="fill:var(--c-ue)">HC-SR04 entrada</text>
+      <text x="188" y="476" font-size="11" text-anchor="end" class="t-mut">por fuera, a ~20 cm</text>
+      <rect x="284" y="404" width="20" height="14" rx="2" style="fill:var(--c-cam)"/>
+      <text x="310" y="420" font-size="11.5" font-weight="600" style="fill:var(--c-cam)">Cámara: mira la zona</text>
+      <!-- servo entrada -->
+      <path d="M262 400 A62 62 0 0 0 200 338" class="s-mut" stroke-width="1" stroke-dasharray="3 3" fill="none"/>
+      <path d="M200 392 V328" style="stroke:var(--c-servo)" stroke-width="3" stroke-dasharray="5 4"/>
+      <path d="M208 400 H276" style="stroke:var(--c-servo)" stroke-width="5" stroke-linecap="round"/>
+      <rect x="192" y="392" width="16" height="16" rx="2" style="fill:var(--c-servo)"/>
+      <text x="248" y="322" font-size="11.5" style="fill:var(--c-servo)" font-weight="600">Servo: abre hacia adentro</text>
+      <!-- flecha entra -->
+      <path d="M240 590 V507" class="s-ink" stroke-width="2"/><polygon points="234,509 246,509 240,497" style="fill:var(--ink)"/>
+      <text x="250" y="582" font-size="12" font-weight="600" class="t-ink">entra</text>
+
+      <!-- ===== Electrónica y panel ===== -->
+      <rect x="316" y="440" width="100" height="56" rx="6" style="fill:var(--pcb)"/>
+      <text x="366" y="463" font-size="11.5" text-anchor="middle" font-weight="600" style="fill:var(--pcb-ink)">ESP32 +</text>
+      <text x="366" y="479" font-size="11.5" text-anchor="middle" font-weight="600" style="fill:var(--pcb-ink)">protoboard</text>
+      <text x="366" y="512" font-size="10.5" text-anchor="middle" class="t-mut">a &lt; 15 cm de la cámara</text>
+      <rect x="316" y="532" width="100" height="34" rx="6" class="s-ink" stroke-width="1.5" style="fill:var(--surface)"/>
+      <text x="366" y="553" font-size="11" text-anchor="middle" class="t-ink">Fuente 5 V 2 A</text>
+
+      <text x="510" y="432" font-size="12" font-weight="600" text-anchor="middle" class="t-ink">Panel de control</text>
+      <rect x="440" y="440" width="140" height="60" rx="6" class="s-ink" stroke-width="1.5" style="fill:var(--surface)"/>
+      <rect x="452" y="452" width="50" height="28" rx="2" style="fill:var(--ink)"/>
+      <text x="477" y="470" font-size="10" text-anchor="middle" style="fill:var(--surface)" font-weight="600">OLED</text>
+      <circle cx="525" cy="464" r="9" style="fill:var(--c-btn)"/>
+      <circle cx="560" cy="464" r="8" style="fill:var(--c-buz)"/>
+      <text x="525" y="492" font-size="10" text-anchor="middle" class="t-mut">emerg.</text>
+      <text x="560" y="492" font-size="10" text-anchor="middle" class="t-mut">buzzer</text>
+
+      <path d="M416 470 H436 V520 H610 V340 H636" style="stroke:var(--c-pwr)" stroke-width="2.5" stroke-dasharray="7 4" fill="none"/>
+      <text x="520" y="537" font-size="11" text-anchor="middle" class="t-mut">canaleta: cables a la salida</text>
+
+      <!-- ===== Salida ===== -->
+      <path d="M640 400 V290 M720 400 V290" class="s-mut" stroke-width="2"/>
+      <circle cx="680" cy="340" r="26" style="fill:color-mix(in srgb,var(--c-us) 18%,var(--surface));stroke:var(--c-us);stroke-width:1.5" stroke-dasharray="4 3"/>
+      <rect x="634" y="334" width="92" height="12" rx="2" style="fill:var(--c-us)"/>
+      <circle cx="668" cy="340" r="4" style="fill:var(--surface)"/><circle cx="692" cy="340" r="4" style="fill:var(--surface)"/>
+      <text x="628" y="322" font-size="12" font-weight="600" text-anchor="end" style="fill:var(--c-us)">HC-SR04 salida, por dentro</text>
+      <!-- servo salida -->
+      <path d="M658 400 A62 62 0 0 0 720 462" class="s-mut" stroke-width="1" stroke-dasharray="3 3" fill="none"/>
+      <path d="M720 408 V472" style="stroke:var(--c-servo)" stroke-width="3" stroke-dasharray="5 4"/>
+      <path d="M712 400 H644" style="stroke:var(--c-servo)" stroke-width="5" stroke-linecap="round"/>
+      <rect x="712" y="392" width="16" height="16" rx="2" style="fill:var(--c-servo)"/>
+      <text x="734" y="440" font-size="11.5" style="fill:var(--c-servo)" font-weight="600">Servo: abre hacia afuera</text>
+      <!-- flecha sale -->
+      <path d="M680 490 V553" class="s-ink" stroke-width="2"/><polygon points="674,551 686,551 680,563" style="fill:var(--ink)"/>
+      <text x="690" y="540" font-size="12" font-weight="600" class="t-ink">sale</text>
+    </svg>
+    </div>
+    <figcaption>Vista desde arriba, con medidas sugeridas. Cada ultrasonido va <b>antes de su puerta</b>: el de entrada por fuera y el de salida por dentro, para que detecte a la persona antes de que la barrera abra. La cámara apunta a la zona del sensor de entrada, que es donde está la persona cuando se toma la foto. El ESP32 va junto a la entrada porque los cables de la cámara deben medir menos de 15 cm; los cables largos (salida y panel) van por la canaleta, sin cruzar ningún pasillo. La barrera de salida abre hacia afuera, en el sentido de la evacuación.</figcaption>
+  </figure>
+
+  <h3>Orden de armado</h3>
+  <ol class="steps">
+    <li><div><b>ESP32 solo.</b> Pónganlo en la protoboard y suban el programa sin nada más conectado. En el Monitor Serie debe salir "Camara NO detectada" y "OLED no encontrada". Es normal.</div></li>
+    <li><div><b>OLED.</b> Conecten 3V3, GND, 21 y 22, y pulsen EN. La pantalla debe mostrar "CONTROL DE ACCESO".</div></li>
+    <li><div><b>Pulsador y buzzer.</b> Pulsador entre el 12 y GND; buzzer entre el 2 y GND. Una pulsación corta activa la emergencia con alarma; el botón BOOT la quita.</div></li>
+    <li><div><b>Fuente y servos.</b> Conecten la fuente de 5 V a los servos y unan su GND con el del ESP32. Con <kbd>eh</kbd> y <kbd>sh</kbd> cada barrera debe abrir y cerrar. Si queda torcida, ajusten <code>SERVO_ABIERTO_GRADOS</code> y <code>SERVO_CERRADO_GRADOS</code>.</div></li>
+    <li><div><b>Ultrasonidos.</b> Armen los dos divisores 1k/2k y monten los sensores en sus puentes, a unos 20 cm del piso. Con las zonas vacías usen <kbd>cal</kbd> y luego <kbd>d</kbd>: la altura debe dar cerca de 0. Pongan un humano y un robot de la maqueta y ajusten <code>UMBRAL_HUMANO_CM</code> entre las dos alturas.</div></li>
+    <li><div><b>Cámara al final.</b> Cables cortos y las dos pull-ups de 4.7 kΩ. En el dashboard, <b>Probar cámara</b>. Si los colores salen raros, pongan <code>CAM_INVERTIR_BYTES = true</code>.</div></li>
+    <li><div><b>Prueba completa.</b> Que entre un humano y un robot, marquen uno en el dashboard antes de que salga, y prueben emergencia y reset.</div></li>
+  </ol>
+</section>
+
 <section class="sec">
   <div class="sec-head">
     <span class="eyebrow">Paso a paso</span>
@@ -375,7 +680,7 @@ footer{color:var(--muted);font-size:13.5px;border-top:1px solid var(--line);padd
         <tr><td>Puertas</td><td>Abierta o cerrada, con botón <b>Abrir</b> para apertura remota</td></tr>
         <tr><td>Trabajadores</td><td>Foto, ID, tipo y tiempo dentro. Se pone en rojo después de 90 s</td></tr>
         <tr><td>Historial</td><td>Foto, ID, tipo, hora de entrada y salida, permanencia</td></tr>
-        <tr><td>Botones</td><td>Emergencia, Reset y Probar cámara</td></tr>
+        <tr><td>Botones</td><td>Emergencia, Reset, Probar cámara, Calibrar sensores y, en cada tarjeta, Marcar que sale</td></tr>
       </tbody></table>
     </div>
     <div class="box" style="display:grid;gap:10px;align-content:start">
@@ -394,20 +699,20 @@ footer{color:var(--muted);font-size:13.5px;border-top:1px solid var(--line);padd
   <div class="box scroll">
     <table class="sit"><tbody>
       <tr><td>Llega alguien a la entrada</td><td>Clasifica, toma la foto, asigna el ID, inicia el contador y abre</td></tr>
-      <tr><td>Llega alguien a la salida</td><td>Clasifica, detiene su contador, lo quita del conteo y abre</td></tr>
+      <tr><td>Llega alguien a la salida</td><td>Clasifica, identifica quién sale (marcado o el más antiguo de ese tipo), detiene su contador, lo quita del conteo y abre</td></tr>
       <tr><td>Entra o sale un robot</td><td>3 pitidos cortos</td></tr>
       <tr><td>Ya hay 12 dentro</td><td>No abre la entrada, da un pitido largo y avisa "Planta llena"</td></tr>
       <tr><td>Alguien pasa de 90 s</td><td>Alerta en la pantalla y el dashboard, más 2 pitidos</td></tr>
-      <tr><td>Botón pulsado corto</td><td><b style="color:var(--danger)">EMERGENCIA</b>: abre las dos puertas, suena la alarma y las puertas quedan abiertas</td></tr>
-      <tr><td>Botón mantenido 3 s</td><td><b style="color:var(--accent)">RESET</b>: cierra las puertas y pone en cero los trabajadores y los contadores</td></tr>
+      <tr><td>Pulsador de emergencia (corto)</td><td><b style="color:var(--danger)">EMERGENCIA</b>: abre las dos puertas y suena la alarma. Las puertas quedan abiertas, pero se sigue contando quién entra y sale</td></tr>
+      <tr><td>Botón BOOT, o pulsador mantenido 3 s</td><td><b style="color:var(--accent)">RESET</b>: cierra las puertas y pone en cero los trabajadores y los contadores</td></tr>
     </tbody></table>
   </div>
   <div class="grid2">
     <div class="box press">
-      <h3>Un solo botón, dos funciones</h3>
+      <h3>Pulsador de emergencia (GPIO 12)</h3>
       <div class="pbar"><div class="a">Soltar antes de 3 s → Emergencia</div><div class="b">3 s → Reset</div></div>
       <div class="axis" style="grid-column:auto"><span>0 s</span><span>3 s</span><span></span></div>
-      <p style="font-size:14px;color:var(--muted)">La emergencia solo se quita con un reset (botón, dashboard o comando <code>rs</code>).</p>
+      <p style="font-size:14px;color:var(--muted)">La emergencia solo se quita con un reset: botón BOOT de la placa, pulsador mantenido 3 s, dashboard o comando <code>rs</code>.</p>
     </div>
     <div class="box" style="display:grid;gap:12px">
       <h3>Sonidos del buzzer</h3>
@@ -431,6 +736,8 @@ footer{color:var(--muted);font-size:13.5px;border-top:1px solid var(--line);padd
     <div><kbd>rs</kbd> Reset</div>
     <div><kbd>st</kbd> Estado actual</div>
     <div><kbd>d</kbd> Altura que mide cada sensor</div>
+    <div><kbd>cal</kbd> Recalibrar los sensores</div>
+    <div><kbd>p3</kbd> Marcar a T03 como próxima salida</div>
   </div>
   <div class="call info"><span class="ic">TIP</span><p>Usen <kbd>d</kbd> para calibrar. Pongan un humano y luego un robot bajo el sensor y miren qué altura mide cada uno. Después ajusten <code>UMBRAL_HUMANO_CM</code> a un valor entre las dos.</p></div>
 </section>
@@ -442,15 +749,17 @@ footer{color:var(--muted);font-size:13.5px;border-top:1px solid var(--line);padd
   </div>
   <div class="grid2">
     <div class="box dec"><h3>Identidad</h3><p>El ID (T01 a T12) se asigna al entrar y queda unido a la foto y al contador. El enunciado lo permite: "identificador definido por Ud.".</p></div>
-    <div class="box dec"><h3>¿Quién sale?</h3><p>Sin lector de tarjetas no se puede saber quién sale. El sistema asume que sale el del mismo tipo que lleva más tiempo dentro. Mejora posible: un lector RFID RC522.</p></div>
+    <div class="box dec"><h3>¿Quién sale?</h3><p>El sensor no sabe quién sale. Desde el dashboard se puede marcar al que va a salir (la marca vale 60 s). Si no hay marca, se asume que sale el del mismo tipo que lleva más tiempo dentro. Mejora posible: un lector RFID RC522.</p></div>
     <div class="box dec"><h3>Seguridad</h3><p>La puerta de salida siempre abre, aunque no haya registro de esa persona. Nunca deja a nadie encerrado.</p></div>
+    <div class="box dec"><h3>Emergencia</h3><p>Las puertas quedan abiertas, pero los sensores siguen contando. Así el dashboard muestra quién sigue dentro durante la evacuación.</p></div>
+    <div class="box dec"><h3>Dos pulsadores</h3><p>El enunciado pide emergencia y reset. No quedan GPIO libres, así que el reset es el botón BOOT que ya trae la placa.</p></div>
     <div class="box dec"><h3>Cámara</h3><p>La OV7670 no genera JPEG. El ESP32 captura 160×120, lo convierte a JPEG y lo guarda en su memoria (las últimas 40 fotos). Si la cámara falla, todo lo demás sigue funcionando.</p></div>
     <div class="box dec"><h3>Sin bloqueos</h3><p>Puertas, botones, buzzer, pantalla y página web corren juntos en el <code>loop()</code>, con máquinas de estados. Ninguna tarea detiene a las demás.</p></div>
     <div class="box dec"><h3>Servos y cámara</h3><p>Los servos usan los canales PWM 4 y 5. La cámara usa el canal 0 para su reloj. Por eso no chocan entre sí.</p></div>
   </div>
 </section>
 
-<footer>Archivos del proyecto: <code>Proyecto Fabrica/v1_con_oled</code>, <code>Proyecto Fabrica/v2_sin_oled</code> y esta guía (<code>Guia.html</code>). Código verificado: compila con esp32 3.3.8 en ESP32 Dev Module.</footer>
+<footer>Archivos del proyecto: <code>Proyecto Fabrica/v1_con_oled</code> y esta guía (<code>Guia.html</code>). Código verificado: compila con esp32 3.3.8 en ESP32 Dev Module.</footer>
 </div>
 
 <script>
@@ -472,16 +781,16 @@ footer{color:var(--muted);font-size:13.5px;border-top:1px solid var(--line);padd
       '32':['cam','Cámara XCLK'],'33':['cam','Cámara PCLK'],
       '25':['servo','Servo entrada (señal)'],
       '26':['cam','Cámara SIOD'],'27':['cam','Cámara SIOC'],
-      '14':['cam','Cámara D5'],'12':['servo','Servo salida (señal)'],'13':['cam','Cámara D4'],
+      '14':['cam','Cámara D5'],'12':['btn','Pulsador emergencia'],'13':['cam','Cámara D4'],
       'VIN':['pwr','5 V → VCC ultrasonidos'],
-      '23':v===1?['ue','TRIG de los 2 ultrasonidos']:['ue','TRIG entrada'],
-      '22':v===1?['oled','OLED SCL']:['us','TRIG salida'],
+      '23':['ue','TRIG de los 2 ultrasonidos'],
+      '22':['oled','OLED SCL'],
       '1':['no','USB (no usar)'],'3':['no','USB (no usar)'],
-      '21':v===1?['oled','OLED SDA']:['btn','Botón reset (opcional)'],
+      '21':['oled','OLED SDA'],
       '19':['cam','Cámara D3'],'18':['cam','Cámara D2'],'5':['cam','Cámara D1'],
       '17':['cam','Cámara D7'],'16':['cam','Cámara D6'],'4':['cam','Cámara D0'],
-      '2':['buz','Buzzer (+)'],'15':['btn','Pulsador'],
-      '3V3':['pwr',v===1?'3.3 V → cámara y OLED':'3.3 V → cámara'],
+      '2':['buz','Buzzer (+)'],'15':['servo','Servo salida (señal)'],
+      '3V3':['pwr','3.3 V → cámara y OLED'],
     };
     if(pin==='GND') return ['pwr','GND común (todo)'];
     return m[pin];
@@ -490,10 +799,10 @@ footer{color:var(--muted);font-size:13.5px;border-top:1px solid var(--line);padd
   const COMPS=v=>[
     {k:'cam',t:'Cámara OV7670 (sin FIFO)',r:[['3V3','3V3','¡Nunca 5 V!'],['GND','GND'],['SIOC','27','+4.7 kΩ a 3V3'],['SIOD','26','+4.7 kΩ a 3V3'],['VSYNC','34'],['HREF','35'],['PCLK','33'],['XCLK','32'],['D0 · D1','4 · 5'],['D2 · D3','18 · 19'],['D4 · D5','13 · 14'],['D6 · D7','16 · 17'],['RESET','3V3'],['PWDN','GND']]},
     {k:'ue',t:'Ultrasonido ENTRADA',r:[['VCC','VIN (5 V)'],['GND','GND'],['TRIG','23'],['ECHO','36','Con divisor 1k/2k']]},
-    {k:'us',t:'Ultrasonido SALIDA',r:[['VCC','VIN (5 V)'],['GND','GND'],['TRIG',v===1?'23':'22',v===1?'Compartido con la entrada':''],['ECHO','39','Con divisor 1k/2k']]},
-    {k:'servo',t:'Servomotores',r:[['Señal entrada (naranja)','25'],['Señal salida (naranja)','12'],['Rojo (+)','5 V fuente','Fuente externa'],['Marrón (−)','GND','Unido al GND del ESP32']]},
-    ...(v===1?[{k:'oled',t:'Pantalla OLED',r:[['VCC','3V3'],['GND','GND'],['SDA','21'],['SCL','22']]}]:[]),
-    {k:'btn',t:v===1?'Pulsador':'Pulsadores',r:[['Pata 1','15'],['Pata 2','GND'],...(v===2?[['Reset opcional','21','La otra pata a GND']]:[])]},
+    {k:'us',t:'Ultrasonido SALIDA',r:[['VCC','VIN (5 V)'],['GND','GND'],['TRIG','23','Compartido con la entrada'],['ECHO','39','Con divisor 1k/2k']]},
+    {k:'servo',t:'Servomotores',r:[['Señal entrada (naranja)','25'],['Señal salida (naranja)','15','No en el 12: es pin de arranque'],['Rojo (+)','5 V fuente','Fuente externa'],['Marrón (−)','GND','Unido al GND del ESP32']]},
+    {k:'oled',t:'Pantalla OLED',r:[['VCC','3V3'],['GND','GND'],['SDA','21'],['SCL','22']]},
+    {k:'btn',t:'Pulsadores',r:[['Emergencia · pata 1','12'],['Emergencia · pata 2','GND'],['Reset','BOOT','Botón de la placa (GPIO 0), sin cables']]},
     {k:'buz',t:'Buzzer activo',r:[['+ (pata larga)','2','El LED azul también parpadea'],['−','GND']]},
   ];
 
@@ -530,9 +839,7 @@ footer{color:var(--muted);font-size:13.5px;border-top:1px solid var(--line);padd
     RIGHT.forEach((p,i)=>row(p,i,'R'));
     $('pinsvg').innerHTML=h;
     $('legend').innerHTML=Object.keys(COL).filter(k=>used[k]).map(k=>`<span><i style="background:var(${COL[k]})"></i>${NAMES[k]}</span>`).join('');
-    $('pinnote').textContent=v===1
-      ? 'En la V1 se usan todos los pines libres. Por eso los dos ultrasonidos comparten el TRIG (GPIO 23); el código los mide por turnos.'
-      : 'En la V2 cada ultrasonido tiene su propio TRIG y el GPIO 21 queda para un botón de reset opcional. Si no lo conectan, no pasa nada.';
+    $('pinnote').textContent='Se usan todos los pines libres. Por eso los dos ultrasonidos comparten el TRIG (GPIO 23); el código los mide por turnos. El botón de reset es el BOOT de la placa (GPIO 0), que no sale en los pines de esta placa.';
   }
 
   function comps(v){
@@ -541,16 +848,7 @@ footer{color:var(--muted);font-size:13.5px;border-top:1px solid var(--line);padd
     }</tbody></table></div>`).join('');
   }
 
-  function set(v){
-    $('btn-v1').setAttribute('aria-pressed',v===1);
-    $('btn-v2').setAttribute('aria-pressed',v===2);
-    svg(v); comps(v);
-    try{localStorage.setItem('guia-version',v)}catch(e){}
-  }
-  $('btn-v1').addEventListener('click',()=>set(1));
-  $('btn-v2').addEventListener('click',()=>set(2));
-  let v0=1; try{if(localStorage.getItem('guia-version')==='2')v0=2}catch(e){}
-  set(v0);
+  svg(1); comps(1);
 
   // Patrones del buzzer (ms encendido / apagado, igual que en el código)
   const PATS=[
