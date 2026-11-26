@@ -49,6 +49,8 @@
 #include <stdarg.h>
 #include "esp_camera.h"
 #include "img_converters.h"
+#include "driver/gpio.h"
+#include "driver/pulse_cnt.h"
 #include "dashboard.h"
 
 // =====================================================================
@@ -73,14 +75,14 @@ const char* MDNS_NAME = "fabrica";         // -> http://fabrica.local
 #define CAM_PIN_HREF   35
 #define CAM_PIN_SIOD   26   // SDA de la cámara (pull-up 4.7k a 3.3V)
 #define CAM_PIN_SIOC   27   // SCL de la cámara (pull-up 4.7k a 3.3V)
-#define CAM_PIN_D0      4
-#define CAM_PIN_D1      5
-#define CAM_PIN_D2     18
-#define CAM_PIN_D3     19
-#define CAM_PIN_D4     13
-#define CAM_PIN_D5     14
-#define CAM_PIN_D6     16
-#define CAM_PIN_D7     17
+#define CAM_PIN_D0     19
+#define CAM_PIN_D1     18
+#define CAM_PIN_D2     17
+#define CAM_PIN_D3      5
+#define CAM_PIN_D4      4
+#define CAM_PIN_D5     16
+#define CAM_PIN_D6     13
+#define CAM_PIN_D7     14
 
 // Pantalla OLED SSD1306 128x64 I2C
 #define OLED_SDA       21
@@ -119,8 +121,18 @@ const uint32_t TIEMPO_MAX_PERMANENCIA_MS = 90000;  // 90 s
 
 // Clasificación por altura (en cm). El sensor está arriba mirando al piso:
 //   altura del objeto = distancia al piso (calibrada) - distancia medida
-const float ALTURA_MIN_PRESENCIA_CM = 2.0;   // más alto que esto = hay alguien
-const float UMBRAL_HUMANO_CM        = 8.0;   // >= esto HUMANO, menor ROBOT
+// Hay dos rangos separados por una zona muerta, para que no haya dudas:
+//   2.0 – 6.5 cm  -> ROBOT
+//   6.5 – 9.5 cm  -> zona muerta: no se registra; se pide subir o bajar
+//   9.5 cm o más  -> HUMANO
+const float ALTURA_MIN_PRESENCIA_CM = 3.0;   // más alto que esto = hay alguien
+const float ROBOT_MAX_CM            = 10.5;   // <= esto ROBOT
+const float HUMANO_MIN_CM           = 18.5;   // >= esto HUMANO
+const uint32_t REINTENTO_DUDOSA_MS  = 1000;  // vuelve a medir cada 1 s si cae en la zona muerta
+// Monitor Serie: imprime todo el tiempo la distancia que mide cada ultrasonido.
+// Se enciende/apaga con el comando 'dd'.
+const bool     MOSTRAR_DISTANCIAS_AL_INICIO = true;
+const uint32_t PERIODO_MOSTRAR_DIST_MS      = 200;   // cada cuánto imprime (5 veces por segundo)
 const float ALTURA_SENSOR_DEFECTO_CM = 20.0; // si la autocalibración falla
 
 // Puertas
@@ -151,6 +163,15 @@ const uint8_t CALIDAD_JPEG  = 80;
 // Si las fotos salen con colores raros (azules/verdes cambiados o con
 // "ruido" de colores), pon esto en true: invierte el orden de bytes RGB565.
 const bool    CAM_INVERTIR_BYTES = false;
+// Reloj que el ESP32 le da a la cámara (pin XLK). Si la foto falla con
+// cables largos o en protoboard, bájalo (6000000) para que sea más tolerante.
+const uint32_t CAM_XCLK_HZ = 6000000;
+// Divisor del reloj interno de la cámara (registro CLKRC). El reloj de
+// salida PLK vale XLK / (divisor + 1). Si la foto sale con franjas de
+// colores y una línea diagonal, se están perdiendo pulsos de PLK: sube este
+// valor (2, 3...) para hacer PLK más lento. Se prueba sin subir el código
+// con el comando "div N" del Monitor Serie. El driver usa 1.
+uint8_t camDivisorReloj = 1;
 
 // =====================================================================
 //                       TIPOS Y VARIABLES GLOBALES
@@ -200,10 +221,12 @@ struct Puerta {
   bool         remota;
   float        ultimaAltura;
   bool         ocupada;          // solo en emergencia: hay alguien bajo el sensor
+  uint32_t     tDudosa;          // última vez que la altura cayó en la zona muerta
+  float        ultimaDistancia;  // última distancia medida en cm (-1 = sin eco)
 };
 Puerta puertas[2] = {
-  { "Entrada", true,  PIN_TRIG_ENTRADA, PIN_ECHO_ENTRADA, PIN_SERVO_ENTRADA, 4, ALTURA_SENSOR_DEFECTO_CM, P_CERRADA, 0, 0, 0, false, 0, false },
-  { "Salida",  false, PIN_TRIG_SALIDA,  PIN_ECHO_SALIDA,  PIN_SERVO_SALIDA,  5, ALTURA_SENSOR_DEFECTO_CM, P_CERRADA, 0, 0, 0, false, 0, false },
+  { "Entrada", true,  PIN_TRIG_ENTRADA, PIN_ECHO_ENTRADA, PIN_SERVO_ENTRADA, 4, ALTURA_SENSOR_DEFECTO_CM, P_CERRADA, 0, 0, 0, false, 0, false, 0, -1 },
+  { "Salida",  false, PIN_TRIG_SALIDA,  PIN_ECHO_SALIDA,  PIN_SERVO_SALIDA,  5, ALTURA_SENSOR_DEFECTO_CM, P_CERRADA, 0, 0, 0, false, 0, false, 0, -1 },
 };
 
 struct Boton {
@@ -222,6 +245,8 @@ const char* nombreTipo(Tipo t) { return t == HUMANO ? "HUMANO" : "ROBOT"; }
 bool     emergencia      = false;
 uint32_t tEmergencia     = 0;
 bool     camaraOK        = false;
+bool     mostrarDistancias = MOSTRAR_DISTANCIAS_AL_INICIO;
+uint32_t tMostrarDist    = 0;
 uint32_t contadorVisitas = 0;
 uint32_t bootId          = 0;
 uint32_t tUltimaMedicion = 0;
@@ -337,6 +362,7 @@ float medirDistanciaCm(int trig, int echo) {
 // Altura del objeto bajo el sensor (0 si no hay nada)
 float medirAltura(Puerta& p) {
   float d = medirDistanciaCm(p.pinTrig, p.pinEcho);
+  p.ultimaDistancia = d;
   if (d < 0) return 0;
   float h = p.alturaSensor - d;
   return h > 0 ? h : 0;
@@ -388,7 +414,7 @@ bool iniciarCamara() {
   c.pin_vsync = CAM_PIN_VSYNC;
   c.pin_href  = CAM_PIN_HREF;
   c.pin_pclk  = CAM_PIN_PCLK;
-  c.xclk_freq_hz = 10000000;            // 10 MHz va bien con la OV7670
+  c.xclk_freq_hz = CAM_XCLK_HZ;
   c.ledc_timer   = LEDC_TIMER_0;        // los servos usan otro timer
   c.ledc_channel = LEDC_CHANNEL_0;
   c.pixel_format = PIXFORMAT_RGB565;    // la OV7670 no genera JPEG
@@ -404,35 +430,256 @@ bool iniciarCamara() {
     Serial.printf("Camara: error 0x%x (el sistema sigue funcionando sin fotos)\n", err);
     return false;
   }
+  corregirVentanaOV7670();
   return true;
+}
+
+// Corrección del driver esp32-camera para la OV7670 en QQVGA (160x120).
+// El driver recibe cada cuadro en 5 bloques de 24 líneas. Con la ventana
+// que pone el driver (filas 12..490) salen 119 líneas, y aun con 120 los
+// últimos bytes se quedan en la FIFO del ESP32 hasta que llegan más datos:
+// el último bloque nunca se completa y cada cuadro llega con 30720 bytes en
+// vez de 38400 ("cam_hal: FB-SIZE: 30720 != 38400"). Se deja la ventana en
+// 10..494: 120 líneas más 1 extra que empuja esos bytes. La línea extra no
+// se guarda (el driver solo copia 38400 bytes). Probado con prueba_camara:
+// 0 líneas extra falla, 1 línea extra funciona.
+extern "C" uint8_t SCCB_Read(uint8_t slv_addr, uint8_t reg);
+extern "C" int     SCCB_Write(uint8_t slv_addr, uint8_t reg, uint8_t data);
+
+void corregirVentanaOV7670() {
+  sensor_t* s = esp_camera_sensor_get();
+  if (!s || s->id.PID != OV7670_PID) return;
+  const uint16_t vInicio = 10, vFin = 494;   // 480 filas + 4 (= 1 línea extra)
+  SCCB_Write(s->slv_addr, 0x19, vInicio >> 2);                          // VSTRT
+  SCCB_Write(s->slv_addr, 0x1A, vFin >> 2);                             // VSTOP
+  SCCB_Write(s->slv_addr, 0x03, ((vFin & 3) << 2) | (vInicio & 3));     // VREF
+  Serial.printf("Camara: ventana vertical corregida (VSTRT=0x%02X VSTOP=0x%02X VREF=0x%02X)\n",
+                SCCB_Read(s->slv_addr, 0x19), SCCB_Read(s->slv_addr, 0x1A), SCCB_Read(s->slv_addr, 0x03));
+  aplicarDivisorReloj(camDivisorReloj);
+}
+
+// Escribe el divisor del reloj interno (CLKRC, registro 0x11) de la OV7670
+void aplicarDivisorReloj(uint8_t n) {
+  sensor_t* s = esp_camera_sensor_get();
+  if (!s || s->id.PID != OV7670_PID) return;
+  camDivisorReloj = n & 0x3F;
+  SCCB_Write(s->slv_addr, 0x11, camDivisorReloj);
+  Serial.printf("Camara: divisor de reloj %u (CLKRC=0x%02X). PLK = XLK / %u\n",
+                camDivisorReloj, SCCB_Read(s->slv_addr, 0x11), camDivisorReloj + 1);
 }
 
 String rutaFoto(uint32_t visita) { return "/f" + String(visita) + ".jpg"; }
 
+// El codificador JPEG llama a esta función con cada trozo que genera y aquí
+// se escribe directo en el archivo. Se usa frame2jpg_cb() y no frame2jpg()
+// porque frame2jpg() pide un bloque de 128 KB de una vez, que en un ESP32
+// sin PSRAM (y con WiFi) nunca está libre: la foto fallaba siempre.
+struct SalidaJpg { File* f; size_t total; };
+size_t escribirTrozoJpg(void* arg, size_t index, const void* data, size_t len) {
+  SalidaJpg* s = (SalidaJpg*)arg;
+  size_t n = s->f->write((const uint8_t*)data, len);
+  s->total += n;
+  return n;
+}
+
+// Razón de la última foto fallida (el dashboard la muestra al pulsar "Probar cámara")
+char errorFoto[96] = "";
+
 bool capturarJPEG(const String& ruta) {
-  if (!camaraOK) return false;
+  if (!camaraOK) {
+    snprintf(errorFoto, sizeof(errorFoto), "la camara no inicio (revisa SCL/SDA, 3V3, GND y XLK)");
+    return false;
+  }
   camera_fb_t* fb = esp_camera_fb_get();          // descarta el cuadro viejo
   if (fb) esp_camera_fb_return(fb);
   fb = esp_camera_fb_get();
-  if (!fb) return false;
+  if (!fb) {
+    snprintf(errorFoto, sizeof(errorFoto), "no llego ningun cuadro completo de la camara");
+    Serial.println(F("Camara: no llego ningun cuadro. Escribe 'cam' para revisar los cables."));
+    return false;
+  }
   if (CAM_INVERTIR_BYTES && fb->format == PIXFORMAT_RGB565) {
     for (size_t i = 0; i + 1 < fb->len; i += 2) {
       uint8_t b = fb->buf[i]; fb->buf[i] = fb->buf[i + 1]; fb->buf[i + 1] = b;
     }
   }
-  uint8_t* jpg = nullptr; size_t len = 0;
-  bool ok = frame2jpg(fb, CALIDAD_JPEG, &jpg, &len);
-  esp_camera_fb_return(fb);
-  if (!ok) return false;
   // OJO: un File cerrado vale false, así que el resultado se guarda ANTES de close()
   bool guardada = false;
   File f = LittleFS.open(ruta, "w");
-  if (f) {
-    guardada = f.write(jpg, len) == len;
+  if (!f) {
+    snprintf(errorFoto, sizeof(errorFoto), "no se pudo crear el archivo en LittleFS");
+  } else {
+    SalidaJpg salida = { &f, 0 };
+    bool ok = frame2jpg_cb(fb, CALIDAD_JPEG, escribirTrozoJpg, &salida);
+    guardada = ok && salida.total > 0;
     f.close();
+    if (!guardada)
+      snprintf(errorFoto, sizeof(errorFoto), "fallo la conversion a JPEG (%u bytes escritos, memoria libre %u, bloque mayor %u)",
+               (unsigned)salida.total, (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
   }
-  free(jpg);
+  esp_camera_fb_return(fb);
+  if (!guardada) {
+    LittleFS.remove(ruta);
+    Serial.printf("Camara: %s\n", errorFoto);
+  }
   return guardada;
+}
+
+// Parte del comando 'cam': con el contador de pulsos (PCNT) del ESP32 cuenta,
+// durante 1 s, cuántos pulsos de PLK llegan mientras HS está en alto (= bytes
+// que manda la cámara) y cuántas líneas (pulsos de HS). En 160x120 RGB565
+// deben salir 320 bytes por línea, 120 líneas y 38400 bytes por cuadro.
+// VS NO se conecta al contador porque el driver de la cámara usa su interrupción.
+void medirBytesCamara() {
+  pcnt_unit_handle_t uBytes = nullptr, uLineas = nullptr;
+  pcnt_channel_handle_t chBytes = nullptr, chLineas = nullptr;
+  pcnt_unit_config_t uc = {};
+  uc.low_limit  = -30000;
+  uc.high_limit =  30000;
+  uc.flags.accum_count = 1;           // sigue contando más allá de 30000
+
+  bool ok = pcnt_new_unit(&uc, &uBytes) == ESP_OK &&
+            pcnt_new_unit(&uc, &uLineas) == ESP_OK;
+  if (ok) {
+    pcnt_chan_config_t cb = {};
+    cb.edge_gpio_num  = CAM_PIN_PCLK;
+    cb.level_gpio_num = CAM_PIN_HREF;
+    pcnt_chan_config_t cl = {};
+    cl.edge_gpio_num  = CAM_PIN_HREF;
+    cl.level_gpio_num = -1;
+    ok = pcnt_new_channel(uBytes, &cb, &chBytes) == ESP_OK &&
+         pcnt_new_channel(uLineas, &cl, &chLineas) == ESP_OK;
+  }
+  if (ok) {
+    // Bytes: cuenta flancos de subida de PLK solo mientras HS = 1
+    pcnt_channel_set_edge_action(chBytes, PCNT_CHANNEL_EDGE_ACTION_INCREASE, PCNT_CHANNEL_EDGE_ACTION_HOLD);
+    pcnt_channel_set_level_action(chBytes, PCNT_CHANNEL_LEVEL_ACTION_KEEP, PCNT_CHANNEL_LEVEL_ACTION_HOLD);
+    // Líneas: cuenta flancos de subida de HS
+    pcnt_channel_set_edge_action(chLineas, PCNT_CHANNEL_EDGE_ACTION_INCREASE, PCNT_CHANNEL_EDGE_ACTION_HOLD);
+    pcnt_unit_handle_t us[2] = { uBytes, uLineas };
+    for (auto u : us) {
+      pcnt_unit_add_watch_point(u, uc.high_limit);
+      pcnt_unit_enable(u);
+      pcnt_unit_clear_count(u);
+    }
+  }
+  if (!ok) {
+    Serial.println(F("Medicion con contador: no se pudo iniciar el PCNT."));
+  } else {
+    // Cuadros: se cuentan mirando VS (igual que arriba)
+    uint32_t cuadros = 0, k = 0;
+    int vsAnt = gpio_get_level((gpio_num_t)CAM_PIN_VSYNC);
+    pcnt_unit_start(uBytes);
+    pcnt_unit_start(uLineas);
+    uint32_t t0 = millis();
+    while (millis() - t0 < 1000) {
+      int vs = gpio_get_level((gpio_num_t)CAM_PIN_VSYNC);
+      if (vs && !vsAnt) cuadros++;
+      vsAnt = vs;
+      if ((++k & 0x3FF) == 0) yield();
+    }
+    pcnt_unit_stop(uBytes);
+    pcnt_unit_stop(uLineas);
+    int bytes = 0, lineas = 0;
+    pcnt_unit_get_count(uBytes, &bytes);
+    pcnt_unit_get_count(uLineas, &lineas);
+
+    Serial.println(F("Medicion con contador (1 s):"));
+    Serial.printf("  Cuadros: %lu   Lineas: %d   Bytes: %d\n", (unsigned long)cuadros, lineas, bytes);
+    if (cuadros > 0 && lineas > 0) {
+      float bLinea  = (float)bytes / lineas;
+      float lCuadro = (float)lineas / cuadros;
+      float bCuadro = (float)bytes / cuadros;
+      Serial.printf("  Bytes por linea:   %.1f  (deben ser 320)\n", bLinea);
+      Serial.printf("  Lineas por cuadro: %.1f  (deben ser 120)\n", lCuadro);
+      Serial.printf("  Bytes por cuadro:  %.0f  (deben ser 38400)\n", bCuadro);
+      if (bCuadro > 38400 * 0.99f && bCuadro < 38400 * 1.01f)
+        Serial.println(F("=> La camara manda la imagen completa (160x120). Mira abajo si la captura sale OK."));
+      else if (bLinea > 320 * 0.99f && bLinea < 320 * 1.01f)
+        Serial.println(F("=> Las lineas estan completas pero llegan menos lineas por cuadro de las esperadas."));
+      else
+        Serial.println(F("=> Las lineas llegan cortas. Si el numero es estable (ej. 256), es configuracion; si varia, es ruido en PLK."));
+    } else {
+      Serial.println(F("=> No se pudieron contar cuadros o lineas."));
+    }
+  }
+
+  if (chBytes)  pcnt_del_channel(chBytes);
+  if (chLineas) pcnt_del_channel(chLineas);
+  pcnt_unit_handle_t us[2] = { uBytes, uLineas };
+  for (auto u : us) {
+    if (!u) continue;
+    pcnt_unit_disable(u);   // devuelve error si no estaba habilitada; no importa
+    pcnt_del_unit(u);
+  }
+  gpio_pullup_dis((gpio_num_t)CAM_PIN_PCLK);   // el PCNT le activa la pull-up
+}
+
+// Comando 'cam': durante 1 s mira si cada señal de la cámara cambia.
+// Una señal "fija" casi siempre es un cable suelto, mal puesto o demasiado largo.
+void diagnosticarCamara() {
+  if (!camaraOK) {
+    Serial.println(F("Camara: no arranco (no responde por SCL/SDA). Revisa 3V3, GND, PWDN a GND, RET a 3V3, XLK y las pull-ups."));
+    return;
+  }
+  const uint8_t pines[] = { CAM_PIN_VSYNC, CAM_PIN_HREF, CAM_PIN_PCLK,
+                            CAM_PIN_D0, CAM_PIN_D1, CAM_PIN_D2, CAM_PIN_D3,
+                            CAM_PIN_D4, CAM_PIN_D5, CAM_PIN_D6, CAM_PIN_D7 };
+  const char* nombres[] = { "VS ", "HS ", "PLK", "D0 ", "D1 ", "D2 ", "D3 ",
+                            "D4 ", "D5 ", "D6 ", "D7 " };
+  const int N = sizeof(pines);
+  bool vio0[N] = {}, vio1[N] = {};
+  uint32_t cuadros = 0, lineas = 0;
+  int vsAnt = gpio_get_level((gpio_num_t)CAM_PIN_VSYNC);
+  int hsAnt = gpio_get_level((gpio_num_t)CAM_PIN_HREF);
+  uint32_t t0 = millis(), k = 0;
+  while (millis() - t0 < 1000) {
+    for (int i = 0; i < N; i++) {
+      if (gpio_get_level((gpio_num_t)pines[i])) vio1[i] = true; else vio0[i] = true;
+    }
+    int vs = gpio_get_level((gpio_num_t)CAM_PIN_VSYNC);
+    int hs = gpio_get_level((gpio_num_t)CAM_PIN_HREF);
+    if (vs && !vsAnt) cuadros++;
+    if (hs && !hsAnt) lineas++;
+    vsAnt = vs; hsAnt = hs;
+    if ((++k & 0x3FF) == 0) yield();
+  }
+
+  Serial.printf("Camara: XLK a %lu MHz. Senales durante 1 s:\n", (unsigned long)(CAM_XCLK_HZ / 1000000));
+  for (int i = 0; i < N; i++) {
+    const char* estado = (vio0[i] && vio1[i]) ? "cambia (bien)"
+                       : vio1[i] ? "FIJA en 1" : "FIJA en 0";
+    Serial.printf("  %s GPIO %2d: %s\n", nombres[i], pines[i], estado);
+  }
+  Serial.printf("  Cuadros por segundo (VS): %lu   Lineas contadas (HS): %lu\n",
+                (unsigned long)cuadros, (unsigned long)lineas);
+
+  bool vsOK  = vio0[0] && vio1[0], hsOK = vio0[1] && vio1[1], plkOK = vio0[2] && vio1[2];
+  if (!vsOK && !hsOK && !plkOK)
+    Serial.println(F("=> No sale nada de la camara: revisa XLK (GPIO 32), su alimentacion y PWDN a GND."));
+  else if (!plkOK)
+    Serial.println(F("=> Falla PLK (GPIO 33): cable suelto, mal puesto o muy largo."));
+  else if (!vsOK || !hsOK)
+    Serial.println(F("=> Falla VS (34) o HS (35): revisa ese cable y que no esten intercambiados."));
+  else {
+    bool datosFijos = false;
+    for (int i = 3; i < N; i++) if (!(vio0[i] && vio1[i])) datosFijos = true;
+    if (datosFijos)
+      Serial.println(F("=> Algun D0-D7 no cambia. Apunta la camara a algo con luz y repite; si sigue fijo, revisa ese cable."));
+    else
+      Serial.println(F("=> Todas las senales llegan. Si la foto falla, es ruido: acorta PLK y XLK o baja CAM_XCLK_HZ."));
+  }
+
+  medirBytesCamara();
+
+  camera_fb_t* fb = esp_camera_fb_get();
+  if (fb) {
+    Serial.printf("Prueba de captura: OK (%ux%u, %u bytes)\n", fb->width, fb->height, (unsigned)fb->len);
+    esp_camera_fb_return(fb);
+  } else {
+    Serial.println(F("Prueba de captura: FALLA (no llego ningun cuadro completo)"));
+    Serial.println(F("=> Si la camara manda la imagen completa pero esto falla, el ESP32 pierde datos al recibirla: mira el numero de FB-SIZE."));
+  }
 }
 
 bool capturarFoto(uint32_t visita) {
@@ -663,13 +910,29 @@ void registrarSalida(Tipo t, Puerta& p) {
   logEvento("Salida %s (%s) tras %lu s", w.id, nombreTipo(w.tipo), (unsigned long)dur);
 }
 
-void procesarLlegada(Puerta& p) {
+// Clasifica por altura. Devuelve false si cae en la zona muerta (entre
+// ROBOT_MAX_CM y HUMANO_MIN_CM) y no registra nada. Con forzar = true (en
+// emergencia, para no perder a nadie) usa el punto medio de la zona muerta.
+bool procesarLlegada(Puerta& p, bool forzar) {
   float h = medirAlturaMediana(p, 5);
   if (h < ALTURA_MIN_PRESENCIA_CM) h = p.ultimaAltura;      // respaldo
-  Tipo t = (h >= UMBRAL_HUMANO_CM) ? HUMANO : ROBOT;
+  Tipo t;
+  if      (h >= HUMANO_MIN_CM) t = HUMANO;
+  else if (h <= ROBOT_MAX_CM)  t = ROBOT;
+  else if (forzar)             t = (h >= (ROBOT_MAX_CM + HUMANO_MIN_CM) / 2) ? HUMANO : ROBOT;
+  else {
+    Serial.printf("  %s: altura %.1f cm -> DUDOSA (robot <= %.1f, humano >= %.1f)\n",
+                  p.nombre, h, ROBOT_MAX_CM, HUMANO_MIN_CM);
+    char l2[12], l3[22];
+    snprintf(l2, sizeof(l2), "%.1f cm", h);
+    snprintf(l3, sizeof(l3), "Robot<%.1f Humano>%.1f", ROBOT_MAX_CM, HUMANO_MIN_CM);
+    mostrarMensaje("DUDOSO", l2, l3);
+    return false;
+  }
   Serial.printf("  %s: altura %.1f cm -> %s\n", p.nombre, h, nombreTipo(t));
   if (p.esEntrada) registrarEntrada(t, p);
   else             registrarSalida(t, p);
+  return true;
 }
 
 void revisarTiempos() {
@@ -696,8 +959,12 @@ void actualizarPuerta(Puerta& p) {
   switch (p.estado) {
     case P_CERRADA:                       // esperando a alguien
       if (hay) {
-        if (++p.conteo >= LECTURAS_CONFIRMACION) { p.conteo = 0; procesarLlegada(p); }
-      } else p.conteo = 0;
+        if (now - p.tDudosa < REINTENTO_DUDOSA_MS) break;   // espera antes de volver a medir
+        if (++p.conteo >= LECTURAS_CONFIRMACION) {
+          p.conteo = 0;
+          if (!procesarLlegada(p, false)) p.tDudosa = millis();
+        }
+      } else { p.conteo = 0; p.tDudosa = 0; }
       break;
 
     case P_ABIERTA: {
@@ -730,7 +997,7 @@ void vigilarPuertaEmergencia(Puerta& p) {
   if (++p.conteo < LECTURAS_CONFIRMACION) return;
   p.conteo = 0;
   p.ocupada = hay;
-  if (hay) procesarLlegada(p);            // registra; la puerta ya está abierta
+  if (hay) procesarLlegada(p, true);      // registra; la puerta ya está abierta
 }
 
 void actualizarPuertas() {
@@ -900,8 +1167,9 @@ void handleFoto() {
 }
 
 void handleFotoPrueba() {
-  if (!capturarJPEG("/prueba.jpg")) { server.send(500, "text/plain", "La camara no respondio"); return; }
+  if (!capturarJPEG("/prueba.jpg")) { server.send(500, "text/plain", errorFoto); return; }
   File f = LittleFS.open("/prueba.jpg", "r");
+  if (!f) { server.send(500, "text/plain", "la foto se guardo pero no se pudo leer"); return; }
   server.sendHeader("Cache-Control", "no-store");
   server.streamFile(f, "image/jpeg");
   f.close();
@@ -983,6 +1251,9 @@ void imprimirAyuda() {
   Serial.println(F("Comandos: eh/er = entra humano/robot | sh/sr = sale humano/robot"));
   Serial.println(F("          em = emergencia | rs = reset | st = estado | d = distancias"));
   Serial.println(F("          cal = recalibrar sensores | p3 = marcar a T03 como proxima salida"));
+  Serial.println(F("          cam = revisar las senales y cables de la camara"));
+  Serial.println(F("          div N = divisor del reloj de la camara (1 normal, 2-3 mas lento)"));
+  Serial.println(F("          dd = encender/apagar la distancia en tiempo real"));
 }
 
 void leerSerial() {
@@ -996,12 +1267,28 @@ void leerSerial() {
   else if (c == "em") activarEmergencia("serial");
   else if (c == "rs") resetSistema("serial");
   else if (c == "cal") { for (auto& p : puertas) calibrarSensor(p); }
+  else if (c == "cam") diagnosticarCamara();
+  else if (c.startsWith("div ")) {
+    int n = c.substring(4).toInt();
+    if (n < 0 || n > 15) Serial.println(F("Usa un valor entre 0 y 15 (el driver usa 1)"));
+    else if (camaraOK) aplicarDivisorReloj(n);
+  }
   else if (c.length() >= 2 && c[0] == 'p' && isDigit(c[1])) {
     if (!marcarSalida(c.substring(1).toInt() - 1)) Serial.println(F("Ese trabajador no esta dentro"));
   }
+  else if (c == "dd") {
+    mostrarDistancias = !mostrarDistancias;
+    Serial.printf("Distancia en tiempo real: %s\n", mostrarDistancias ? "ENCENDIDA" : "apagada");
+  }
   else if (c == "d") {
-    for (auto& p : puertas)
-      Serial.printf("%s: piso %.1f cm, altura objeto %.1f cm\n", p.nombre, p.alturaSensor, medirAltura(p));
+    for (auto& p : puertas) {
+      float h = medirAltura(p);
+      const char* zona = h < ALTURA_MIN_PRESENCIA_CM ? "vacio"
+                       : h <= ROBOT_MAX_CM           ? "ROBOT"
+                       : h <  HUMANO_MIN_CM          ? "zona muerta"
+                                                     : "HUMANO";
+      Serial.printf("%s: piso %.1f cm, altura objeto %.1f cm -> %s\n", p.nombre, p.alturaSensor, h, zona);
+    }
   } else if (c == "st") {
     int h, r; contarDentro(h, r);
     Serial.printf("Dentro: %d humanos, %d robots | emergencia: %s | camara: %s\n",
@@ -1060,10 +1347,25 @@ void setup() {
   SONAR(PAT_HUMANO);
 }
 
+// Imprime la última distancia medida por cada sensor (no hace mediciones
+// extra: usa las que ya hace la máquina de estados de las puertas).
+void mostrarDistanciasSerie() {
+  if (!mostrarDistancias || millis() - tMostrarDist < PERIODO_MOSTRAR_DIST_MS) return;
+  tMostrarDist = millis();
+  for (int i = 0; i < 2; i++) {
+    Puerta& p = puertas[i];
+    if (i) Serial.print(F("  |  "));
+    if (p.ultimaDistancia < 0) Serial.printf("%s: sin eco", p.nombre);
+    else Serial.printf("%s: %5.1f cm (altura %4.1f)", p.nombre, p.ultimaDistancia, p.ultimaAltura);
+  }
+  Serial.println();
+}
+
 void loop() {
   server.handleClient();
   leerBotones();
   actualizarPuertas();
+  mostrarDistanciasSerie();
   revisarTiempos();
   actualizarBuzzer();
   actualizarOLED();

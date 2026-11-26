@@ -110,7 +110,7 @@ dialog img{display:block;width:min(90vw,480px);image-rendering:pixelated}
     </div>
   </section>
 </main>
-<dialog id="dlg" onclick="this.close()"><img id="dimg" alt="Foto"></dialog>
+<dialog id="dlg" onclick="this.close()"><img id="dimg" alt=""><p id="dmsg" style="margin:0;padding:14px 16px;max-width:min(90vw,480px)"></p></dialog>
 
 <script>
 const $=s=>document.querySelector(s);
@@ -125,8 +125,16 @@ async function post(url,msg){
   try{const r=await fetch(url,{method:'POST'});if(!r.ok){const j=await r.json().catch(()=>({}));alert(j.error||'Error '+r.status)}}catch(e){alert('Sin conexión con el ESP32')}
   tick();
 }
-function ver(src){$('#dimg').src=src;$('#dlg').showModal()}
-function probarFoto(){ver('/api/foto-prueba?t='+Date.now())}
+function ver(src){$('#dmsg').textContent='';$('#dimg').style.display='';$('#dimg').src=src;$('#dlg').showModal()}
+async function probarFoto(){
+  const img=$('#dimg'),msg=$('#dmsg');
+  img.style.display='none';msg.textContent='Tomando foto...';$('#dlg').showModal();
+  try{
+    const r=await fetch('/api/foto-prueba?t='+Date.now());
+    if(!r.ok){msg.textContent='No se pudo tomar la foto: '+await r.text();return}
+    img.src=URL.createObjectURL(await r.blob());img.style.display='';msg.textContent='';
+  }catch(e){msg.textContent='Sin conexión con el ESP32'}
+}
 
 function render(d){
   D=d;
