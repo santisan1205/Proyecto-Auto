@@ -1,6 +1,16 @@
 // =====================================================================
 //  Dashboard web (HTML + CSS + JS) servido por el ESP32.
 //  Consulta /api/estado cada segundo. No necesita Internet.
+//
+//  Se guarda en la flash (PROGMEM) como una cadena cruda R"rawliteral(...)"
+//  y el ESP32 la envía tal cual en la ruta "/" (ver iniciarWeb()).
+//  Partes de la página:
+//    - Tarjetas de arriba: humanos, robots, total / 12 y estado.
+//    - Puertas: estado y botón Abrir (POST /api/abrir).
+//    - Control: Emergencia, Reset, Probar cámara y Calibrar sensores.
+//    - Trabajadores dentro: foto, ID, tipo, tiempo y "Marcar que sale".
+//    - Historial de accesos y lista de eventos.
+//  El JavaScript del final pide el estado, lo dibuja y manda las acciones.
 // =====================================================================
 #pragma once
 #include <Arduino.h>
@@ -113,19 +123,31 @@ dialog img{display:block;width:min(90vw,480px);image-rendering:pixelated}
 <dialog id="dlg" onclick="this.close()"><img id="dimg" alt=""><p id="dmsg" style="margin:0;padding:14px 16px;max-width:min(90vw,480px)"></p></dialog>
 
 <script>
+// ---- Utilidades ----
+// $: atajo de querySelector. off: diferencia entre el reloj del navegador y
+// millis() del ESP32, para mostrar horas reales. D: último estado recibido.
+// kDentro / kHist: "huella" de las listas, para no redibujarlas si no cambian
+// (así no parpadean las fotos).
 const $=s=>document.querySelector(s);
 let off=0, D=null, kDentro='', kHist='';
+// hora(ms): hora local de un instante millis() del ESP32. dur(s): "1m 05s".
+// tipo(t): etiqueta Humano/Robot. foto(x): miniatura de la visita o "Sin foto".
 const hora=ms=>new Date(off+ms).toLocaleTimeString();
 const dur=s=>{s=Math.max(0,Math.floor(s));return s>=60?Math.floor(s/60)+'m '+String(s%60).padStart(2,'0')+'s':s+'s'};
 const tipo=t=>`<span class="pill ${t}">${t=='H'?'Humano':'Robot'}</span>`;
 const foto=(x)=>x.foto?`<img src="/foto?v=${x.visita}&b=${D.boot}" alt="${x.id}" onclick="ver(this.src)" onerror="this.outerHTML='<div class=ph>Sin foto</div>'">`:`<div class="ph">Sin foto</div>`;
 
+// Envía una acción al ESP32 (POST). Si msg viene, pide confirmación antes.
+// Al terminar refresca el estado.
 async function post(url,msg){
   if(msg&&!confirm(msg))return;
   try{const r=await fetch(url,{method:'POST'});if(!r.ok){const j=await r.json().catch(()=>({}));alert(j.error||'Error '+r.status)}}catch(e){alert('Sin conexión con el ESP32')}
   tick();
 }
+// Abre una foto en grande en el cuadro de diálogo.
 function ver(src){$('#dmsg').textContent='';$('#dimg').style.display='';$('#dimg').src=src;$('#dlg').showModal()}
+// Botón "Probar cámara": pide una foto nueva. Si el ESP32 responde con
+// error, muestra la razón en vez de una imagen rota.
 async function probarFoto(){
   const img=$('#dimg'),msg=$('#dmsg');
   img.style.display='none';msg.textContent='Tomando foto...';$('#dlg').showModal();
@@ -136,6 +158,9 @@ async function probarFoto(){
   }catch(e){msg.textContent='Sin conexión con el ESP32'}
 }
 
+// Dibuja todo el estado recibido de /api/estado: tarjetas, puertas,
+// trabajadores dentro (tiempo, barra de progreso hasta 90 s, marca de
+// salida), historial y eventos.
 function render(d){
   D=d;
   $('#kH').textContent=d.humanos;
@@ -180,6 +205,8 @@ function render(d){
   $('#ev').innerHTML=d.eventos.map(e=>`<li><time>${hora(e.t)}</time>${e.txt.replace(/</g,'&lt;')}</li>`).join('');
 }
 
+// Pide /api/estado, lo dibuja y actualiza el indicador "Conectado".
+// Se llama al cargar la página y luego cada segundo.
 async function tick(){
   try{
     const r=await fetch('/api/estado',{cache:'no-store'});

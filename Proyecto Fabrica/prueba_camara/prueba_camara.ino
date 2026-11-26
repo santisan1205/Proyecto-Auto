@@ -119,6 +119,9 @@ void corregirVentanaOV7670() {
                 SCCB_Read(s->slv_addr, 0x19), SCCB_Read(s->slv_addr, 0x1A), SCCB_Read(s->slv_addr, 0x03));
 }
 
+// Configura e inicia la cámara con los mismos pines y ajustes que el
+// programa principal (RGB565, 160x120, un buffer en la RAM interna) y
+// aplica la corrección de la ventana vertical. Devuelve false si no responde.
 bool iniciarCamara() {
   camera_config_t c = {};
   c.pin_pwdn     = -1;
@@ -182,6 +185,9 @@ void dibujarAscii(camera_fb_t* fb) {
   Serial.print('+'); for (int x = 0; x < W / bx; x++) Serial.print('-'); Serial.println('+');
 }
 
+// Toma una foto y muestra si llegó completa, su tamaño, el tiempo que tardó
+// y el brillo (medio, mínimo y máximo). Con dibujar = true la dibuja en el
+// Monitor Serie con caracteres (80x30).
 void tomarFoto(bool dibujar) {
   if (!camaraOK) { Serial.println(F("La camara no inicio. Revisa las conexiones y reinicia (boton EN).")); return; }
   uint32_t t0 = millis();
@@ -308,6 +314,7 @@ void ayuda() {
   Serial.println(F("          v N = N lineas extra (0-4) | x N = reloj a N MHz | ? = ayuda"));
 }
 
+// Lee un comando del Monitor Serie y lo ejecuta (ver ayuda()).
 void leerSerial() {
   if (!Serial.available()) return;
   String c = Serial.readStringUntil('\n');
@@ -348,6 +355,7 @@ void setup() {
   ayuda();
 }
 
+// Atiende los comandos y, si está activa, toma una foto cada PERIODO_AUTO_MS.
 void loop() {
   leerSerial();
   if (auto_ && millis() - tAuto >= PERIODO_AUTO_MS) {

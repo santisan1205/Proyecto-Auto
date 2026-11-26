@@ -35,6 +35,29 @@
 */
 
 #include <Arduino.h>
+/*
+  ÍNDICE DEL ARCHIVO (cada sección empieza con un encabezado "=====")
+    1. CONFIGURACIÓN ............ pines, tiempos, umbrales y parámetros de la cámara
+    2. TIPOS Y VARIABLES ........ Trabajador, Registro, Evento, Puerta, Boton
+    3. REGISTRO DE EVENTOS ...... logEvento()
+    4. BUZZER ................... patrones de pitidos sin bloquear
+    5. SERVOS ................... PWM de 50 Hz y apertura/cierre de puertas
+    6. ULTRASONIDO .............. distancia, altura, mediana y calibración
+    7. CÁMARA ................... inicio, correcciones del driver, JPEG y diagnóstico
+    8. PANTALLA OLED ............ pantalla normal, mensajes y emergencia
+    9. TRABAJADORES / HISTORIAL . entradas, salidas, IDs y marca de salida
+   10. MÁQUINA DE ESTADOS ....... CERRADA -> ABIERTA -> REARME por puerta
+   11. EMERGENCIA Y RESET
+   12. BOTONES .................. antirrebote, pulsación corta y larga
+   13. SERVIDOR WEB / API ....... dashboard y rutas /api/...
+   14. MONITOR SERIE ............ comandos de prueba
+   15. SETUP / LOOP
+
+  Idea general: nada usa delay() largos. loop() llama a cada módulo, que
+  revisa su estado con millis() y retorna enseguida; así puertas, botones,
+  buzzer, pantalla y servidor web funcionan al mismo tiempo.
+*/
+
 #if !defined(ESP_ARDUINO_VERSION_MAJOR) || ESP_ARDUINO_VERSION_MAJOR < 3
 #error "Este código requiere el core 'esp32 by Espressif Systems' versión 3.x"
 #endif
@@ -240,6 +263,7 @@ struct Boton {
 Boton boton      = { PIN_BOTON,       false, false, 0, 0, false };
 Boton botonReset = { PIN_BOTON_RESET, false, false, 0, 0, false };
 
+// Texto del tipo de trabajador, para la OLED, el Monitor Serie y los eventos.
 const char* nombreTipo(Tipo t) { return t == HUMANO ? "HUMANO" : "ROBOT"; }
 
 bool     emergencia      = false;
@@ -287,12 +311,17 @@ const uint16_t* patron = nullptr;
 uint8_t  patronLen = 0, patronIdx = 0;
 uint32_t tPaso = 0;
 
+// Empieza a reproducir un patrón de pitidos (duraciones alternando
+// encendido/apagado en ms). No bloquea: actualizarBuzzer() lo avanza.
+// Se usa con la macro SONAR(patron), que calcula el largo del arreglo.
 void sonar(const uint16_t* p, uint8_t len) {
   patron = p; patronLen = len; patronIdx = 0; tPaso = millis();
   digitalWrite(PIN_BUZZER, HIGH);
 }
 #define SONAR(p) sonar(p, sizeof(p) / sizeof(p[0]))
 
+// Avanza el patrón en curso según el tiempo transcurrido. Sin patrón y en
+// emergencia, repite la alarma durante DURACION_ALARMA_EMERG_MS.
 void actualizarBuzzer() {
   if (!patron) {
     // La alarma de emergencia se repite durante unos segundos
@@ -319,9 +348,12 @@ void esperarActivo(uint32_t ms) {
 // =====================================================================
 //                               SERVOS
 // =====================================================================
+// Asocia el pin del servo a su canal LEDC: 50 Hz con 14 bits de resolución.
 void iniciarServo(Puerta& p) {
   ledcAttachChannel(p.pinServo, 50, 14, p.canalPwm);   // 50 Hz, 14 bits
 }
+// Lleva el servo al ángulo pedido (0-180°). Convierte el ángulo a un pulso
+// de 500-2400 us dentro del periodo de 20 ms y lo escribe como duty de 14 bits.
 void moverServo(int pin, int grados) {
   grados = constrain(grados, 0, 180);
   uint32_t us   = map(grados, 0, 180, 500, 2400);       // SG90 / MG90S
@@ -329,6 +361,8 @@ void moverServo(int pin, int grados) {
   ledcWrite(pin, duty);
 }
 
+// Abre la barrera y pasa la puerta a ABIERTA. remota = true cuando la abre
+// el dashboard: entonces cierra a los APERTURA_REMOTA_MS si la zona está libre.
 void abrirPuerta(Puerta& p, bool remota = false) {
   moverServo(p.pinServo, SERVO_ABIERTO_GRADOS);
   p.estado = P_ABIERTA;
@@ -337,6 +371,8 @@ void abrirPuerta(Puerta& p, bool remota = false) {
   p.conteo = 0;
 }
 
+// Cierra la barrera y pasa a REARME: la puerta no acepta a nadie más hasta
+// que la zona bajo el sensor quede vacía (evita contar dos veces).
 void cerrarPuerta(Puerta& p) {
   moverServo(p.pinServo, SERVO_CERRADO_GRADOS);
   p.estado = P_REARME;        // espera a que la zona quede libre
@@ -368,6 +404,7 @@ float medirAltura(Puerta& p) {
   return h > 0 ? h : 0;
 }
 
+// Mediana de n valores (los ordena en el mismo arreglo). Descarta lecturas raras.
 float mediana(float* v, int n) {
   for (int i = 1; i < n; i++) {               // ordenamiento por inserción
     float x = v[i]; int j = i - 1;
@@ -377,6 +414,8 @@ float mediana(float* v, int n) {
   return v[n / 2];
 }
 
+// Altura más confiable: mediana de n lecturas separadas 30 ms. Se usa al
+// clasificar a quien llega.
 float medirAlturaMediana(Puerta& p, int n) {
   float v[9];
   n = min(n, 9);
@@ -485,6 +524,11 @@ size_t escribirTrozoJpg(void* arg, size_t index, const void* data, size_t len) {
 // Razón de la última foto fallida (el dashboard la muestra al pulsar "Probar cámara")
 char errorFoto[96] = "";
 
+// Toma una foto y la guarda como JPEG en LittleFS, en 'ruta'.
+// 1) descarta el cuadro viejo del buffer y pide uno nuevo;
+// 2) si CAM_INVERTIR_BYTES, invierte el orden de bytes del RGB565;
+// 3) lo convierte a JPEG por trozos, escribiendo directo al archivo.
+// Si falla, deja la razón en errorFoto y devuelve false.
 bool capturarJPEG(const String& ruta) {
   if (!camaraOK) {
     snprintf(errorFoto, sizeof(errorFoto), "la camara no inicio (revisa SCL/SDA, 3V3, GND y XLK)");
@@ -682,11 +726,15 @@ void diagnosticarCamara() {
   }
 }
 
+// Foto de una visita (/f<visita>.jpg). Antes borra la foto que quedó fuera
+// de las últimas MAX_FOTOS para no llenar la memoria.
 bool capturarFoto(uint32_t visita) {
   if (visita > (uint32_t)MAX_FOTOS) LittleFS.remove(rutaFoto(visita - MAX_FOTOS));
   return capturarJPEG(rutaFoto(visita));
 }
 
+// Al arrancar borra las fotos /f*.jpg de una sesión anterior: los números
+// de visita vuelven a empezar y no deben mezclarse.
 void borrarFotosViejas() {
   String nombres[64]; int n = 0;
   File root = LittleFS.open("/");
@@ -708,6 +756,8 @@ uint32_t tMensaje = 0;
 const uint32_t DURACION_MENSAJE_MS = 2500;
 uint32_t tRefrescoOled = 0;
 
+// Muestra un mensaje grande en la OLED durante DURACION_MENSAJE_MS
+// (l1 y l2 en letra grande, l3 en pequeña). Lo dibuja actualizarOLED().
 void mostrarMensaje(const char* l1, const char* l2, const char* l3) {
   strncpy(msgL1, l1, sizeof(msgL1) - 1);
   strncpy(msgL2, l2, sizeof(msgL2) - 1);
@@ -716,11 +766,13 @@ void mostrarMensaje(const char* l1, const char* l2, const char* l3) {
   if (tMensaje == 0) tMensaje = 1;
 }
 
+// Cuenta cuántos humanos (h) y robots (r) hay dentro de la planta.
 void contarDentro(int& h, int& r) {
   h = r = 0;
   for (auto& w : trabajadores) if (w.dentro) (w.tipo == HUMANO ? h : r)++;
 }
 
+// Pantalla de arranque: título y una línea con el paso que se está haciendo.
 void oledInicio(const char* linea) {
   if (!oledOK) return;
   oled.clearDisplay();
@@ -732,6 +784,9 @@ void oledInicio(const char* linea) {
   oled.display();
 }
 
+// Redibuja la OLED cada 250 ms. Prioridad: 1) emergencia (parpadea),
+// 2) mensaje temporal, 3) pantalla normal, que alterna cada 4 s entre el
+// resumen (conteos, puertas, IP) y la lista de quién está dentro.
 void actualizarOLED() {
   if (!oledOK || millis() - tRefrescoOled < 250) return;
   tRefrescoOled = millis();
@@ -804,6 +859,7 @@ void actualizarOLED() {
 // =====================================================================
 //                   LÓGICA DE TRABAJADORES / HISTORIAL
 // =====================================================================
+// Agrega una visita al inicio del historial (se guardan las últimas MAX_HISTORIAL).
 void agregarHistorial(const Trabajador& w) {
   for (int i = MAX_HISTORIAL - 1; i > 0; i--) historial[i] = historial[i - 1];
   Registro& r = historial[0];
@@ -812,6 +868,7 @@ void agregarHistorial(const Trabajador& w) {
   if (nHistorial < MAX_HISTORIAL) nHistorial++;
 }
 
+// Marca la hora de salida de una visita del historial.
 void cerrarHistorial(uint32_t visita, uint32_t tSalida) {
   for (int i = 0; i < nHistorial; i++)
     if (historial[i].visita == visita && historial[i].dentro) {
@@ -820,6 +877,7 @@ void cerrarHistorial(uint32_t visita, uint32_t tSalida) {
     }
 }
 
+// Primer ID libre (0 = T01 ... 11 = T12), o -1 si la planta está llena.
 int buscarSlotLibre() {
   for (int i = 0; i < MAX_TRABAJADORES; i++) if (!trabajadores[i].dentro) return i;
   return -1;
@@ -836,6 +894,8 @@ int slotMarcadoSalida() {
   return -1;
 }
 
+// Marca a un trabajador como el próximo en salir (vale VIGENCIA_MARCA_SALIDA_MS).
+// Devuelve false si esa posición no tiene a nadie dentro.
 bool marcarSalida(int slot) {
   if (slot < 0 || slot >= MAX_TRABAJADORES || !trabajadores[slot].dentro) return false;
   visitaMarcadaSalida = trabajadores[slot].visita;
@@ -859,6 +919,9 @@ int buscarParaSalida(Tipo t) {
   return mejor >= 0 ? mejor : cualquiera;
 }
 
+// Registra una entrada: si hay cupo asigna el primer ID libre, toma la foto,
+// inicia el contador, abre la puerta y la agrega al historial. Si la planta
+// está llena, no abre, suena el pitido largo y la puerta pasa a REARME.
 void registrarEntrada(Tipo t, Puerta& p) {
   int slot = buscarSlotLibre();
   if (slot < 0) {
@@ -884,6 +947,8 @@ void registrarEntrada(Tipo t, Puerta& p) {
   logEvento("Entrada %s (%s)%s", w.id, nombreTipo(t), w.foto ? "" : " sin foto");
 }
 
+// Registra una salida: abre siempre (seguridad), elige quién sale (marca
+// vigente o buscarParaSalida()), detiene su contador y cierra su historial.
 void registrarSalida(Tipo t, Puerta& p) {
   abrirPuerta(p);                       // por seguridad siempre se deja salir
   if (t == ROBOT) SONAR(PAT_ROBOT); else if (BEEP_HUMANOS) SONAR(PAT_HUMANO);
@@ -935,6 +1000,7 @@ bool procesarLlegada(Puerta& p, bool forzar) {
   return true;
 }
 
+// Alerta una sola vez por trabajador cuando supera TIEMPO_MAX_PERMANENCIA_MS.
 void revisarTiempos() {
   uint32_t now = millis();
   for (auto& w : trabajadores) {
@@ -1000,6 +1066,8 @@ void vigilarPuertaEmergencia(Puerta& p) {
   if (hay) procesarLlegada(p, true);      // registra; la puerta ya está abierta
 }
 
+// Cada PERIODO_MEDICION_MS mide UNA puerta, alternando: los dos sensores
+// comparten el TRIG y así nunca se mezclan sus ecos.
 void actualizarPuertas() {
   if (millis() - tUltimaMedicion < PERIODO_MEDICION_MS) return;
   tUltimaMedicion = millis();
@@ -1011,6 +1079,8 @@ void actualizarPuertas() {
 // =====================================================================
 //                       EMERGENCIA Y RESET
 // =====================================================================
+// Emergencia: abre las dos puertas, suena la alarma y deja la OLED en modo
+// emergencia. Los sensores siguen contando (vigilarPuertaEmergencia).
 void activarEmergencia(const char* origen) {
   if (emergencia) return;
   emergencia = true;
@@ -1024,6 +1094,8 @@ void activarEmergencia(const char* origen) {
   logEvento("EMERGENCIA activada (%s)", origen);
 }
 
+// Reset: quita la emergencia, saca a todos de la planta (cierra su
+// historial), cierra las puertas y borra la marca de salida.
 void resetSistema(const char* origen) {
   emergencia = false;
   visitaMarcadaSalida = 0;
@@ -1062,6 +1134,8 @@ int leerBoton(Boton& b) {
   return 0;
 }
 
+// Pulsador de emergencia: corto = emergencia, mantenido 3 s = reset.
+// Botón BOOT: cualquier pulsación = reset.
 void leerBotones() {
   int e = leerBoton(boton);
   if (e == 1) activarEmergencia("boton");
@@ -1072,11 +1146,13 @@ void leerBotones() {
 // =====================================================================
 //                         SERVIDOR WEB / API
 // =====================================================================
+// Responde un JSON sin caché (el dashboard siempre quiere el dato actual).
 void enviarJSON(int code, const String& s) {
   server.sendHeader("Cache-Control", "no-store");
   server.send(code, "application/json", s);
 }
 
+// Agrega un texto entre comillas al JSON, escapando " y \.
 void agregarTexto(String& j, const char* s) {     // texto con escape JSON
   j += '"';
   for (; *s; s++) {
@@ -1086,6 +1162,8 @@ void agregarTexto(String& j, const char* s) {     // texto con escape JSON
   j += '"';
 }
 
+// GET /api/estado: todo el estado en un JSON (conteos, puertas, trabajadores
+// dentro, historial y eventos). El dashboard lo pide periódicamente.
 void handleEstado() {
   uint32_t now = millis();
   int h, r; contarDentro(h, r);
@@ -1156,6 +1234,7 @@ void handleEstado() {
   enviarJSON(200, j);
 }
 
+// GET /foto?v=<visita>: devuelve el JPEG de esa visita (se guarda en caché 1 día).
 void handleFoto() {
   uint32_t v = (uint32_t)server.arg("v").toInt();   // solo números: evita rutas raras
   String ruta = rutaFoto(v);
@@ -1166,6 +1245,7 @@ void handleFoto() {
   f.close();
 }
 
+// GET /api/foto-prueba: toma una foto ahora; si falla responde 500 con la razón.
 void handleFotoPrueba() {
   if (!capturarJPEG("/prueba.jpg")) { server.send(500, "text/plain", errorFoto); return; }
   File f = LittleFS.open("/prueba.jpg", "r");
@@ -1175,6 +1255,7 @@ void handleFotoPrueba() {
   f.close();
 }
 
+// POST /api/abrir?puerta=entrada|salida: apertura remota (no en emergencia).
 void handleAbrir() {
   String q = server.arg("puerta");
   int idx = q == "entrada" ? 0 : q == "salida" ? 1 : -1;
@@ -1185,6 +1266,7 @@ void handleAbrir() {
   enviarJSON(200, "{\"ok\":true}");
 }
 
+// POST /api/emergencia y /api/reset: los botones del dashboard.
 void handleEmergencia() { activarEmergencia("dashboard"); enviarJSON(200, "{\"ok\":true}"); }
 void handleReset()      { resetSistema("dashboard");      enviarJSON(200, "{\"ok\":true}"); }
 
@@ -1211,6 +1293,7 @@ void handleMarcarSalida() {
   enviarJSON(404, "{\"ok\":false,\"error\":\"ese trabajador no esta dentro\"}");
 }
 
+// Registra las rutas del servidor web y lo arranca en el puerto 80.
 void iniciarWeb() {
   server.on("/", HTTP_GET, []() { server.send_P(200, "text/html", DASHBOARD_HTML); });
   server.on("/api/estado", HTTP_GET, handleEstado);
@@ -1225,6 +1308,8 @@ void iniciarWeb() {
   server.begin();
 }
 
+// Crea la red propia (AP_SSID / AP_PASS, IP 192.168.4.1). Si STA_SSID no está
+// vacío, también se conecta a esa red y muestra la IP que recibe. Arranca mDNS.
 void iniciarWiFi() {
   WiFi.mode(STA_SSID[0] ? WIFI_AP_STA : WIFI_AP);
   WiFi.softAP(AP_SSID, AP_PASS);
@@ -1247,6 +1332,7 @@ void iniciarWiFi() {
 // =====================================================================
 //              MONITOR SERIE (pruebas sin hardware completo)
 // =====================================================================
+// Lista de comandos del Monitor Serie.
 void imprimirAyuda() {
   Serial.println(F("Comandos: eh/er = entra humano/robot | sh/sr = sale humano/robot"));
   Serial.println(F("          em = emergencia | rs = reset | st = estado | d = distancias"));
@@ -1256,6 +1342,7 @@ void imprimirAyuda() {
   Serial.println(F("          dd = encender/apagar la distancia en tiempo real"));
 }
 
+// Lee una línea del Monitor Serie y ejecuta el comando (ver imprimirAyuda()).
 void leerSerial() {
   if (!Serial.available()) return;
   String c = Serial.readStringUntil('\n');
@@ -1301,6 +1388,8 @@ void leerSerial() {
 // =====================================================================
 //                            SETUP / LOOP
 // =====================================================================
+// Arranque: pines, OLED, LittleFS, cámara (antes del WiFi para que haya RAM
+// contigua para su buffer), calibración de los sensores, WiFi y web.
 void setup() {
   Serial.begin(115200);
   delay(300);
@@ -1361,6 +1450,7 @@ void mostrarDistanciasSerie() {
   Serial.println();
 }
 
+// Ciclo principal: cada función revisa su estado y retorna enseguida.
 void loop() {
   server.handleClient();
   leerBotones();
